@@ -42,6 +42,8 @@ class InterviewSession(Base):
     communication_score = Column(Integer, nullable=True)
     problem_solving_score = Column(Integer, nullable=True)
     structure_score = Column(Integer, nullable=True)
+    
+    tech_stack = Column(JSON, nullable=True)     # List[str]
 
     # Relationships
     user = relationship("User", back_populates="sessions")

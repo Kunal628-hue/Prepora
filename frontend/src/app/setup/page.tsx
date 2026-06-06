@@ -21,6 +21,12 @@ export default function SetupPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState("Arjun");
 
+  // Resume Upload/Parsing State
+  const [parsingResume, setParsingResume] = useState(false);
+  const [parsedTechStack, setParsedTechStack] = useState<string[]>([]);
+  const [resumeSuccess, setResumeSuccess] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
   // Form selections
   const [selectedType, setSelectedType] = useState<"technical" | "system-design" | "behavioral">("technical");
   const [selectedDifficulty, setSelectedDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
@@ -30,6 +36,65 @@ export default function SetupPage() {
   // API loading / error states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleResumeUpload = async (file: File) => {
+    if (!file) return;
+    setParsingResume(true);
+    setError(null);
+    setResumeSuccess(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/resume/parse", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || "Failed to parse resume.");
+      }
+
+      const data = await response.json();
+      
+      // Pre-populate fields based on response
+      if (data.role) {
+        const parsedRoleLower = data.role.toLowerCase();
+        if (parsedRoleLower.includes("system") || parsedRoleLower.includes("architect") || parsedRoleLower.includes("infrastructure")) {
+          setSelectedType("system-design");
+        } else if (parsedRoleLower.includes("product") || parsedRoleLower.includes("behavioral") || parsedRoleLower.includes("manager")) {
+          setSelectedType("behavioral");
+        } else {
+          setSelectedType("technical");
+        }
+        setCompanyInput(data.role);
+      }
+      
+      if (data.level) {
+        const lvl = data.level.toLowerCase();
+        if (lvl.includes("senior") || lvl.includes("lead") || lvl.includes("staff")) {
+          setSelectedDifficulty("Hard");
+        } else if (lvl.includes("junior") || lvl.includes("entry") || lvl.includes("fresher")) {
+          setSelectedDifficulty("Easy");
+        } else {
+          setSelectedDifficulty("Medium");
+        }
+      }
+
+      if (data.tech_stack) {
+        setParsedTechStack(data.tech_stack);
+      }
+
+      setResumeSuccess(`Resume "${file.name}" analyzed successfully!`);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to analyze resume. Please try again.");
+    } finally {
+      setParsingResume(false);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -72,7 +137,8 @@ export default function SetupPage() {
           user_id: activeUserId,
           role: finalRole,
           level: selectedDifficulty,
-          mode: "voice" // Default voice synthesis and recording mode
+          mode: "voice", // Default voice synthesis and recording mode
+          tech_stack: parsedTechStack.length > 0 ? parsedTechStack : null
         }),
       });
 
@@ -136,6 +202,88 @@ export default function SetupPage() {
           <p className="msetup-card-subtitle">
             The AI will ask you questions and give feedback after.
           </p>
+
+          {/* Resume Upload Box */}
+          <div className="msetup-section" style={{ marginBottom: "1.75rem" }}>
+            <span className="msetup-section-label">UPLOAD RESUME TO TAILOR INTERVIEW (PDF OR IMAGE)</span>
+            
+            <div 
+              className={`msetup-upload-zone ${dragActive ? "drag-active" : ""}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  handleResumeUpload(e.dataTransfer.files[0]);
+                }
+              }}
+              onClick={() => document.getElementById("resume-file-input")?.click()}
+            >
+              <input 
+                id="resume-file-input"
+                type="file" 
+                accept=".pdf,image/png,image/jpeg,image/jpg" 
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleResumeUpload(e.target.files[0]);
+                  }
+                }}
+              />
+              
+              {parsingResume ? (
+                <>
+                  <div className="msetup-spinner" />
+                  <span className="msetup-upload-title">Analyzing Resume...</span>
+                  <span className="msetup-upload-desc">Gemini is extracting experience and technology stack</span>
+                </>
+              ) : (
+                <>
+                  <div className="msetup-upload-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                  </div>
+                  <span className="msetup-upload-title">
+                    {resumeSuccess ? "Replace Resume" : "Upload your Resume / Portfolio Photo"}
+                  </span>
+                  <span className="msetup-upload-desc">
+                    Drag and drop or click to browse (PDF, PNG, JPG up to 10MB)
+                  </span>
+                </>
+              )}
+            </div>
+
+            {resumeSuccess && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.82rem", color: "#16a34a", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                <span>✓</span> {resumeSuccess}
+              </div>
+            )}
+
+            {parsedTechStack.length > 0 && (
+              <div style={{ marginTop: "1rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#8e8e93", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "0.5rem" }}>
+                  DETECTED TECHNOLOGY STACK:
+                </span>
+                <div className="msetup-badge-container">
+                  {parsedTechStack.map((tech) => (
+                    <span key={tech} className="msetup-badge">
+                      {tech}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Form Error Message */}
           {error && (

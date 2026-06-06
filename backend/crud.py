@@ -20,6 +20,7 @@ def create_session(db: Session, session_in: InterviewSessionCreate):
         level=session_in.level,
         mode=session_in.mode,
         scheduled_time=session_in.scheduled_time,
+        tech_stack=session_in.tech_stack,
         status="active"
     )
     db.add(db_session)

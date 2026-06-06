@@ -1,7 +1,7 @@
 import json
 import logging
 import httpx
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -113,11 +113,13 @@ async def generate_llm_response(prompt: str, response_json: bool = False) -> str
     logger.warning("No API keys found or configured. Operating in DEMO MODE.")
     return ""
 
-async def generate_first_question(role: str, level: str) -> str:
-    """Generate the initial interview question based on role and level."""
+async def generate_first_question(role: str, level: str, tech_stack: Optional[List[str]] = None) -> str:
+    """Generate the initial interview question based on role, level, and tech stack."""
+    tech_stack_str = ", ".join(tech_stack) if tech_stack else "general technical skills"
     prompt = (
         f"You are an expert interviewer. Generate the first interview question for a candidate interviewing for "
-        f"a {level}-level {role} position. The question should be challenging and directly relevant to the role. "
+        f"a {level}-level {role} position. The candidate's resume shows they have experience in the following tech stack: {tech_stack_str}.\n"
+        f"Start the interview by asking a highly relevant technical concept question based on this tech stack and role.\n"
         f"Respond with ONLY the question text itself. Do not include any greeting, introduction, or markdown formatting."
     )
     
@@ -131,19 +133,42 @@ async def generate_first_question(role: str, level: str) -> str:
     # Demo fallback
     return MOCK_QUESTIONS[0]
 
-async def generate_next_question(role: str, level: str, transcript: List[Dict[str, str]]) -> str:
-    """Generate the next interview question based on history."""
+async def generate_next_question(role: str, level: str, transcript: List[Dict[str, str]], tech_stack: Optional[List[str]] = None) -> str:
+    """Generate the next interview question based on history, tech stack, and session progression."""
+    tech_stack_str = ", ".join(tech_stack) if tech_stack else "general technical skills"
     transcript_str = ""
     for turn in transcript:
         transcript_str += f"Interviewer: {turn.get('question')}\nCandidate: {turn.get('answer')}\n\n"
         
+    current_question_number = len(transcript) + 1
+    
     prompt = (
-        f"You are an expert interviewer conducting a {level}-level {role} interview. "
-        f"Here is the transcript of the interview so far:\n\n{transcript_str}"
-        f"Based on the previous questions and answers, generate the next logical interview question. "
-        f"It should follow the natural flow of the conversation, dive deeper into their previous answer if appropriate, "
-        f"or shift to a new area of competencies. Respond with ONLY the question text itself. "
-        f"Do not include any pleasantries or introductory phrases."
+        f"You are an expert interviewer conducting a {level}-level {role} interview.\n"
+        f"Candidate's Tech Stack: {tech_stack_str}\n"
+        f"This is a 5-question interview. The candidate is currently on question {current_question_number} of 5.\n\n"
+        f"Here is the transcript so far:\n\n{transcript_str}"
+        f"Guidelines for this turn:\n"
+    )
+    
+    if current_question_number in [3, 4]:
+        prompt += (
+            f"- This is the Data Structures and Algorithms (DSA) round! Present a specific, clear algorithmic coding problem "
+            f"appropriate for a {level} level (e.g. dynamic programming, string manipulation, binary trees, arrays). "
+            f"Ask them to explain their algorithmic approach, write code/pseudocode, and analyze the Big O time and space complexities. "
+            f"Do not give the solution. Ensure the question is presented clearly."
+        )
+    elif current_question_number == 5:
+        prompt += (
+            f"- This is the final question. Either ask a follow-up optimization question on their previous algorithmic solution, "
+            f"or ask a system design / behavioral question to wrap up the interview."
+        )
+    else:
+        prompt += (
+            f"- Ask a technology-specific question focused on their tech stack ({tech_stack_str}) or experience level."
+        )
+        
+    prompt += (
+        f"\n\nRespond with ONLY the question text itself. Do not include any pleasantries, headers, or conversational intros."
     )
     
     try:
@@ -184,18 +209,22 @@ async def evaluate_answer(question: str, answer: str, role: str, level: str) -> 
     import random
     return random.choice(MOCK_CRITIQUES)
 
-async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str]]) -> Dict[str, Any]:
-    """Perform final grading on the full interview session."""
+async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str]], tech_stack: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Perform final grading on the full interview session, evaluating tech stack alignment and DSA competence."""
+    tech_stack_str = ", ".join(tech_stack) if tech_stack else "general technical skills"
     transcript_str = ""
     for turn in transcript:
         transcript_str += f"Question: {turn.get('question')}\nCandidate Response: {turn.get('answer')}\n\n"
         
     prompt = (
         f"You are an expert interviewer grading a candidate's full mock interview for a {level}-level {role} position.\n"
+        f"Candidate's Tech Stack: {tech_stack_str}\n\n"
         f"Here is the transcript of the interview:\n\n{transcript_str}"
-        f"Please perform a complete performance review and output a JSON object with the following keys:\n"
+        f"Please perform a complete performance review, checking their proficiency in their tech stack "
+        f"and how they performed in the DSA coding round (specifically checking code correctness and Big O complexity accuracy).\n"
+        f"Output a JSON object with the following keys:\n"
         f"- 'overall_score': An integer score from 0 to 100.\n"
-        f"- 'feedback_summary': A comprehensive paragraph summarizing their performance and readiness.\n"
+        f"- 'feedback_summary': A comprehensive paragraph summarizing their performance, readiness, and DSA competence.\n"
         f"- 'strengths': A list of 3 specific strengths demonstrated (list of strings).\n"
         f"- 'weaknesses': A list of 3 specific weaknesses or areas of improvement (list of strings).\n"
         f"- 'technical_score': Integer (0-100) reflecting tech competency/accuracy.\n"
@@ -214,3 +243,55 @@ async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str
         
     # Demo fallback
     return MOCK_SESSION_EVALUATION
+
+async def parse_resume(file_bytes: bytes, mime_type: str) -> Dict[str, Any]:
+    """Parse a resume file (PDF or Image) using Gemini 2.5 Flash multimodal capabilities."""
+    import base64
+    base64_data = base64.b64encode(file_bytes).decode("utf-8")
+    
+    prompt = (
+        "You are a professional resume parser. Analyze the attached resume and extract the following information:\n"
+        "1. 'role': The most appropriate target software developer/engineer role matching the candidate's background (e.g. 'Frontend Engineer', 'Backend Engineer', 'Fullstack Engineer', 'Data Scientist', 'Mobile Developer', 'DevOps Engineer').\n"
+        "2. 'level': The inferred experience level (choose exactly one of: 'Junior', 'Mid-level', 'Senior').\n"
+        "3. 'tech_stack': A list of the key programming languages, frameworks, libraries, databases, and core dev tools mentioned (e.g. ['React', 'Python', 'SQL', 'Docker']).\n\n"
+        "Respond with a valid JSON object containing only these three keys. Do not include any markdown code block formatting (like ```json) or leading/trailing explanation text."
+    )
+    
+    # Check if Gemini is configured
+    if settings.LLM_PROVIDER == "gemini" and settings.GEMINI_API_KEY:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        headers = {"Content-Type": "application/json"}
+        
+        data = {
+            "contents": [{
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": base64_data
+                        }
+                    },
+                    {
+                        "text": prompt
+                    }
+                ]
+            }],
+            "generationConfig": {"responseMimeType": "application/json"}
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=35.0) as client:
+                res = await client.post(url, json=data, headers=headers)
+                res.raise_for_status()
+                res_data = res.json()
+                text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+                return json.loads(text.strip())
+        except Exception as e:
+            logger.error(f"Error parsing resume via Gemini: {e}")
+            
+    # Fallback to general parsing mock
+    return {
+        "role": "Fullstack Engineer",
+        "level": "Mid-level",
+        "tech_stack": ["React", "Node.js", "Python", "SQL"]
+    }

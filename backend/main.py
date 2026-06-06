@@ -1,9 +1,9 @@
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from backend.config import settings
 from backend.database import engine, Base, get_db
@@ -17,6 +17,21 @@ logger = logging.getLogger(__name__)
 # Initialize database tables
 logger.info("Initializing database tables...")
 Base.metadata.create_all(bind=engine)
+
+# Check and execute sqlite schema migration for tech_stack JSON column
+try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("SELECT tech_stack FROM interview_sessions LIMIT 1"))
+except Exception:
+    logger.info("Database migration: Adding tech_stack column to interview_sessions table...")
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN tech_stack TEXT"))
+        logger.info("Database migration successful.")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
 
 app = FastAPI(title="Prepora API", description="AI Interview Coaching Platform Backend")
 
@@ -86,6 +101,31 @@ def login(payload: schemas.UserLoginRequest, db: Session = Depends(get_db)):
         
     return db_user
 
+@app.post("/api/resume/parse")
+async def parse_resume_endpoint(file: UploadFile = File(...)):
+    """Upload a resume (PDF/Photo) and parse its target role, level, and tech stack."""
+    logger.info(f"Received resume upload: {file.filename}, content_type: {file.content_type}")
+    
+    # Read file content
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024: # Limit to 10MB
+        raise HTTPException(status_code=400, detail="File size exceeds maximum limit of 10MB.")
+        
+    mime_type = file.content_type
+    # Fallback/normalize common mime types if missing or generic
+    if not mime_type or mime_type == "application/octet-stream":
+        if file.filename.lower().endswith(".pdf"):
+            mime_type = "application/pdf"
+        elif file.filename.lower().endswith(".png"):
+            mime_type = "image/png"
+        elif file.filename.lower().endswith((".jpg", ".jpeg")):
+            mime_type = "image/jpeg"
+        else:
+            mime_type = "application/pdf" # default fallback
+            
+    parsed_info = await llm.parse_resume(contents, mime_type)
+    return parsed_info
+
 @app.post("/api/interviews/start", response_model=schemas.InterviewSessionResponse)
 async def start_interview(session_in: schemas.InterviewSessionCreate, db: Session = Depends(get_db)):
     """Initialize a new interview session and generate the first question."""
@@ -94,10 +134,11 @@ async def start_interview(session_in: schemas.InterviewSessionCreate, db: Sessio
     # 1. Create the session in DB
     db_session = crud.create_session(db, session_in)
     
-    # 2. Call LLM to generate the first question
+    # 2. Call LLM to generate the first question, including tech stack
     first_question_text = await llm.generate_first_question(
         role=db_session.role,
-        level=db_session.level
+        level=db_session.level,
+        tech_stack=db_session.tech_stack
     )
     
     # 3. Save the first question in DB
@@ -176,6 +217,7 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
         next_question_text = await llm.generate_next_question(
             role=db_session.role,
             level=db_session.level,
+            tech_stack=db_session.tech_stack,
             transcript=answered_turns
         )
         
@@ -247,6 +289,7 @@ async def end_interview(
     eval_result = await llm.evaluate_session(
         role=db_session.role,
         level=db_session.level,
+        tech_stack=db_session.tech_stack,
         transcript=transcript
     )
 
