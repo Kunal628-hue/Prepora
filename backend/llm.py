@@ -58,7 +58,7 @@ async def generate_llm_response(prompt: str, response_json: bool = False) -> str
     
     # 1. Gemini AI Studio Configuration
     if provider == "gemini" and settings.GEMINI_API_KEY:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
         headers = {"Content-Type": "application/json"}
         
         contents = [{"parts": [{"text": prompt}]}]
@@ -87,8 +87,8 @@ async def generate_llm_response(prompt: str, response_json: bool = False) -> str
             "Content-Type": "application/json"
         }
         
-        # Use Meta Llama 3.3 70B Speculative Decoding as default high-quality model
-        model = "llama-3.3-70b-specdec"
+        # Use Meta Llama 3.3 70B Versatile as default high-quality model
+        model = "llama-3.3-70b-versatile"
         
         data = {
             "model": model,

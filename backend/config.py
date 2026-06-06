@@ -13,4 +13,11 @@ class Settings(BaseSettings):
         env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
         extra = "ignore"
 
+    def __init__(self, **values):
+        super().__init__(**values)
+        self.DATABASE_URL = self.DATABASE_URL.strip()
+        self.GEMINI_API_KEY = self.GEMINI_API_KEY.strip()
+        self.GROQ_API_KEY = self.GROQ_API_KEY.strip()
+        self.LLM_PROVIDER = self.LLM_PROVIDER.strip()
+
 settings = Settings()
