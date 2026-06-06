@@ -104,3 +104,62 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# Company Track Schemas
+class TrackProblemResponse(BaseModel):
+    id: str
+    company_id: str
+    name: str
+    difficulty: str
+    topic: str
+    link: str
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyTipResponse(BaseModel):
+    id: str
+    company_id: str
+    title: str
+    content: str
+    order: int
+
+    class Config:
+        from_attributes = True
+
+
+class UserFeedbackTipCreate(BaseModel):
+    content: str
+    author: Optional[str] = "@user"
+    time_ago: Optional[str] = "Just now"
+
+
+class UserFeedbackTipResponse(BaseModel):
+    id: str
+    company_id: str
+    content: str
+    author: str
+    time_ago: str
+    likes: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    difficulty: str
+    tags: Optional[List[str]] = []
+    problems_count: int
+    mock_questions_count: int
+    problems: List[TrackProblemResponse] = []
+    tips: List[CompanyTipResponse] = []
+    user_tips: List[UserFeedbackTipResponse] = []
+
+    class Config:
+        from_attributes = True
+

@@ -1,32 +1,30 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Bell,
   Settings,
   Search,
-  Check,
-  ExternalLink,
-  Sparkles,
-  X,
-  AlertCircle
+  Code,
+  MessageSquare,
+  ArrowRight,
+  ShoppingCart,
+  Globe,
+  LayoutGrid,
+  Laptop,
+  PlayCircle
 } from "lucide-react";
 
-interface Problem {
-  num: string;
-  title: string;
-  difficulty: "EASY" | "MEDIUM" | "HARD";
-  companies: string[];
-  topics: string[];
-  hints: { title: string; content: string }[];
-  terminal_notes: string;
-}
-
-interface CategoryInfo {
+interface Company {
+  id: string;
   name: string;
-  count: number;
+  description: string;
+  difficulty: "HARD" | "MEDIUM" | "EASY";
+  tags: string[];
+  problems_count: number;
+  mock_questions_count: number;
 }
 
 const API_BASE = "http://127.0.0.1:8000";
@@ -34,214 +32,100 @@ const API_BASE = "http://127.0.0.1:8000";
 export default function PracticePage() {
   const router = useRouter();
 
-  // Auth & Profile state
+  // Profile / Auth state
   const [userName, setUserName] = useState("Arjun");
   const [userId, setUserId] = useState<string | null>(null);
 
   // API state
-  const [categories, setCategories] = useState<CategoryInfo[]>([]);
-  const [problemsByCategory, setProblemsByCategory] = useState<Record<string, Problem[]>>({});
-  const [totalProblemsCount, setTotalProblemsCount] = useState(450);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [backendOffline, setBackendOffline] = useState(false);
 
   // UI state
-  const [activeCategory, setActiveCategory] = useState("Arrays");
-  const [diffFilter, setDiffFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [solvedProblems, setSolvedProblems] = useState<Set<string>>(new Set());
-  const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null);
-  
-  // AI Helper Drawer state (FAB click)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [activeHintIndex, setActiveHintIndex] = useState(0);
 
-  // Load user & solved problems from localStorage on mount
+  // Load user details
   useEffect(() => {
-    const id = localStorage.getItem("prepora_user_id");
-    const name = localStorage.getItem("prepora_user_name");
-    
-    if (id) {
-      setUserId(id);
-    }
-    if (name) {
-      setUserName(name);
-    }
-
-    const savedSolved = localStorage.getItem("prepora_solved_problems");
-    if (savedSolved) {
-      try {
-        setSolvedProblems(new Set(JSON.parse(savedSolved)));
-      } catch (e) {
-        console.error(e);
-      }
+    if (typeof window !== "undefined") {
+      const storedId = localStorage.getItem("prepora_user_id");
+      const storedName = localStorage.getItem("prepora_user_name");
+      if (storedId) setUserId(storedId);
+      if (storedName) setUserName(storedName);
     }
   }, []);
 
-  // Fetch problems dataset from FastAPI backend
+  // Fetch company tracks from FastAPI backend
   useEffect(() => {
-    const fetchProblems = async () => {
+    const fetchCompanies = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/api/problems`);
-        if (!res.ok) throw new Error(`API error: ${res.status}`);
-        const data = await res.json();
-
-        // Convert backend categories to list
-        const catInfo: CategoryInfo[] = (data.categories || []).map((name: string) => ({
-          name,
-          count: (data.problems[name] || []).length
-        }));
-
-        setCategories(catInfo);
-        setProblemsByCategory(data.problems || {});
-        setTotalProblemsCount(data.total_count || 450);
-
-        // Select "Arrays" as default active category
-        const defaultCat = catInfo.find(c => c.name.toLowerCase() === "arrays")?.name || catInfo[0]?.name || "Arrays";
-        setActiveCategory(defaultCat);
-        
-        const firstProbs = data.problems[defaultCat] || [];
-        if (firstProbs.length > 0) {
-          setSelectedProblem(firstProbs[0]);
+        const res = await fetch(`${API_BASE}/api/companies`);
+        if (!res.ok) {
+          throw new Error("Failed to load company tracks.");
         }
-
-        setBackendOffline(false);
-      } catch (err) {
-        console.error("Failed to fetch problems from backend:", err);
-        setBackendOffline(true);
-        
-        // Define robust mockup fallback state matching the requested dashboard categories & counts
-        const mockCategories = [
-          { name: "Arrays", count: 48 },
-          { name: "Strings", count: 32 },
-          { name: "Linked Lists", count: 28 },
-          { name: "Trees", count: 36 },
-          { name: "Graphs", count: 24 },
-          { name: "Dynamic Programming", count: 40 },
-          { name: "Greedy", count: 18 }
-        ];
-
-        // Seed mock problems list
-        const mockProblems: Record<string, Problem[]> = {};
-        mockCategories.forEach(cat => {
-          const probs: Problem[] = [];
-          for (let i = 1; i <= cat.count; i++) {
-            const numStr = String(i).padStart(3, '0');
-            
-            // Hardcode some famous ones for Arrays
-            let title = `${cat.name} Problem #${i}`;
-            let diff: "EASY" | "MEDIUM" | "HARD" = i % 3 === 0 ? "EASY" : i % 3 === 1 ? "MEDIUM" : "HARD";
-            let companies = ["Google", "Amazon"];
-            let topics = [cat.name];
-
-            if (cat.name === "Arrays") {
-              if (i === 1) { title = "Two Sum"; diff = "EASY"; companies = ["Google", "Amazon"]; }
-              else if (i === 2) { title = "3Sum"; diff = "MEDIUM"; companies = ["Meta"]; }
-              else if (i === 3) { title = "Container With Most Water"; diff = "MEDIUM"; companies = ["Google", "Adobe"]; }
-              else if (i === 4) { title = "Trapping Rain Water"; diff = "HARD"; companies = ["Microsoft"]; }
-              else if (i === 5) { title = "Best Time to Buy and Sell Stock"; diff = "EASY"; companies = ["Amazon"]; }
-            }
-
-            probs.push({
-              num: numStr,
-              title,
-              difficulty: diff,
-              companies,
-              topics,
-              hints: [
-                { title: "HINT 01", content: `This is hint 1 for ${title}. Consider edge cases.` },
-                { title: "HINT 02", content: `This is hint 2 for ${title}. Try to minimize space complexity.` }
-              ],
-              terminal_notes: `// Sandbox Solution for ${title}:\n// Time: O(N), Space: O(1)`
-            });
-          }
-          mockProblems[cat.name] = probs;
-        });
-
-        setCategories(mockCategories);
-        setProblemsByCategory(mockProblems);
-        setTotalProblemsCount(226); // total problems in mockup = 226
-
-        // Set default problem
-        setSelectedProblem(mockProblems["Arrays"][0]);
+        const data = await res.json();
+        setCompanies(data);
+      } catch (err: any) {
+        console.error(err);
+        setError("Failed to connect to the backend server. Make sure the FastAPI server is running.");
       } finally {
         setLoading(false);
       }
     };
-    fetchProblems();
+    fetchCompanies();
   }, []);
 
-  // Sync solved problems to localStorage whenever toggled
-  const toggleSolved = (category: string, num: string) => {
-    const problemKey = `${category.toUpperCase()}-${num}`;
-    setSolvedProblems(prev => {
-      const next = new Set(prev);
-      if (next.has(problemKey)) {
-        next.delete(problemKey);
-      } else {
-        next.add(problemKey);
-      }
-      localStorage.setItem("prepora_solved_problems", JSON.stringify(Array.from(next)));
-      return next;
-    });
-  };
+  // Filter companies based on search query
+  const filteredCompanies = companies.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const getSolvedCount = () => {
-    return solvedProblems.size;
-  };
-
-  const getPercentageComplete = () => {
-    if (totalProblemsCount === 0) return 0;
-    return Math.min(100, Math.round((getSolvedCount() / totalProblemsCount) * 100));
-  };
-
-  const selectCategory = useCallback((catName: string) => {
-    setActiveCategory(catName);
-    const probs = problemsByCategory[catName] || [];
-    if (probs.length > 0) {
-      setSelectedProblem(probs[0]);
+  // Helper to render brand logo icons dynamically
+  const renderLogoIcon = (name: string) => {
+    const lowerName = name.toLowerCase();
+    if (lowerName === "google") {
+      return <div className="company-logo-badge logo-google">G</div>;
     }
-    setDiffFilter("ALL");
-    setSearchQuery("");
-  }, [problemsByCategory]);
-
-  const selectProblem = (prob: Problem) => {
-    setSelectedProblem(prob);
-    setActiveHintIndex(0);
+    if (lowerName === "amazon") {
+      return (
+        <div className="company-logo-badge logo-amazon">
+          <ShoppingCart size={18} />
+        </div>
+      );
+    }
+    if (lowerName === "meta") {
+      return (
+        <div className="company-logo-badge logo-meta">
+          <Globe size={18} />
+        </div>
+      );
+    }
+    if (lowerName === "microsoft") {
+      return (
+        <div className="company-logo-badge logo-microsoft">
+          <LayoutGrid size={18} />
+        </div>
+      );
+    }
+    if (lowerName === "apple") {
+      return (
+        <div className="company-logo-badge logo-apple">
+          <Laptop size={18} />
+        </div>
+      );
+    }
+    if (lowerName === "netflix") {
+      return (
+        <div className="company-logo-badge logo-netflix">
+          <PlayCircle size={18} />
+        </div>
+      );
+    }
+    return <div className="company-logo-badge logo-apple">{name.charAt(0)}</div>;
   };
-
-  const currentProblems = problemsByCategory[activeCategory] || [];
-  
-  // Filter by difficulty and search queries
-  const filteredProblems = currentProblems.filter(p => {
-    if (diffFilter !== "ALL" && p.difficulty !== diffFilter) return false;
-    if (searchQuery && !p.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
-  });
 
   return (
     <div className="prac-page">
-      {/* Dynamic Offline Warning Header */}
-      {backendOffline && (
-        <div style={{
-          background: "#fffbeb",
-          borderBottom: "1px solid #fde68a",
-          color: "#b45309",
-          padding: "0.6rem 2rem",
-          fontSize: "0.82rem",
-          fontWeight: 500,
-          display: "flex",
-          alignItems: "center",
-          gap: "0.5rem",
-          justifyContent: "center"
-        }}>
-          <AlertCircle size={16} />
-          <span>Backend offline. Displaying sandbox demonstration questions. Please run FastAPI on port 8000 for live updates.</span>
-        </div>
-      )}
-
       {/* Header Bar */}
       <header className="dash-header">
         <Link href="/dashboard" className="dash-logo-wrap">
@@ -277,304 +161,148 @@ export default function PracticePage() {
         </div>
       </header>
 
-      {/* Container */}
-      <div className="prac-container">
+      {/* Main Track Dashboard */}
+      <main className="track-dashboard">
         {loading ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#888", fontSize: "0.95rem" }}>
-            Loading DSA Workspace...
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "300px", color: "#8e8e93" }}>
+            Loading company tracks...
+          </div>
+        ) : error ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "300px", color: "#ef4444" }}>
+            <span style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.5rem" }}>Unable to load page data</span>
+            <span style={{ fontSize: "0.85rem", color: "#78716c" }}>{error}</span>
           </div>
         ) : (
           <>
-            {/* Left Sidebar */}
-            <aside className="prac-sidebar">
-              <div>
-                <div className="prac-sidebar-title-section">
-                  <span className="prac-sidebar-label">TOPICS</span>
-                  <h3 className="prac-sidebar-subtitle">Master the basics</h3>
-                </div>
-
-                <div className="prac-topic-list">
-                  {categories.map((cat) => {
-                    const isActive = cat.name.toLowerCase() === activeCategory.toLowerCase();
-                    return (
-                      <button
-                        key={cat.name}
-                        className={`prac-topic-card ${isActive ? "active" : ""}`}
-                        onClick={() => selectCategory(cat.name)}
-                      >
-                        <div className="prac-topic-left">
-                          <span className="prac-topic-label">{cat.name}</span>
-                        </div>
-                        <span className="prac-topic-count">({cat.count})</span>
-                      </button>
-                    );
-                  })}
+            {/* Header section with page titles & search bar */}
+            <div className="track-header">
+              <div className="track-title-row">
+                <div>
+                  <h1 className="track-page-title">Company Tracks</h1>
+                  <p className="track-page-subtitle">Curated interview paths for top companies</p>
                 </div>
               </div>
 
-              {/* Progress Summary at Bottom of Sidebar */}
-              <div className="prac-sidebar-bottom">
-                <div className="prac-progress-text-row">
-                  <span>{getSolvedCount()} done</span>
-                  <span>{getPercentageComplete()}% complete</span>
-                </div>
-                <div className="prac-progress-bar-bg">
-                  <div 
-                    className="prac-progress-bar-fill" 
-                    style={{ width: `${getPercentageComplete()}%` }} 
-                  />
-                </div>
-                <button className="prac-btn-unlock" onClick={() => alert("Unlock Advanced Track coming soon!")}>
-                  Unlock Advanced
-                </button>
-              </div>
-            </aside>
-
-            {/* Main Content Area */}
-            <main className="prac-main-content">
-              {/* Content Header */}
-              <div className="prac-content-header">
-                <h1 className="prac-title">{activeCategory} — {currentProblems.length} Problems</h1>
-                <div className="prac-search-wrap">
-                  <span className="prac-search-icon">
-                    <Search size={16} />
-                  </span>
-                  <input
-                    type="text"
-                    className="prac-search-input"
-                    placeholder="Search problems..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="prac-filters-row">
-                {["ALL", "EASY", "MEDIUM", "HARD"].map((diff) => (
-                  <button
-                    key={diff}
-                    className={`prac-filter-btn ${diffFilter === diff ? "active" : ""}`}
-                    onClick={() => setDiffFilter(diff)}
-                  >
-                    {diff === "ALL" ? "All" : diff.charAt(0) + diff.slice(1).toLowerCase()}
-                  </button>
-                ))}
-              </div>
-
-              {/* Table Card */}
-              <div className="prac-card">
-                {/* Headers */}
-                <div className="prac-table-header">
-                  <span>#</span>
-                  <span>STATUS</span>
-                  <span>PROBLEM</span>
-                  <span>DIFFICULTY</span>
-                  <span>COMPANIES</span>
-                  <span style={{ display: "flex", justifyContent: "center" }}>LINKS</span>
-                </div>
-
-                {/* Rows */}
-                {filteredProblems.length === 0 ? (
-                  <div style={{ padding: "3rem", textAlign: "center", color: "#888", fontSize: "0.85rem" }}>
-                    No matching problems found in this category.
-                  </div>
-                ) : (
-                  filteredProblems.map((prob) => {
-                    const problemKey = `${activeCategory.toUpperCase()}-${prob.num}`;
-                    const isCompleted = solvedProblems.has(problemKey);
-                    
-                    return (
-                      <div 
-                        key={prob.num} 
-                        className="prac-table-row"
-                        onClick={() => selectProblem(prob)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        {/* Num */}
-                        <span className="prac-col-num">{prob.num}</span>
-
-                        {/* Status Checkbox */}
-                        <div className="prac-col-status" onClick={(e) => e.stopPropagation()}>
-                          <div 
-                            className={`prac-checkbox-custom ${isCompleted ? "checked" : ""}`}
-                            onClick={() => toggleSolved(activeCategory, prob.num)}
-                          >
-                            {isCompleted && <Check size={12} strokeWidth={3} />}
-                          </div>
-                        </div>
-
-                        {/* Problem Title */}
-                        <span className={`prac-col-title ${isCompleted ? "completed" : ""}`}>
-                          {prob.title}
-                        </span>
-
-                        {/* Difficulty Badge */}
-                        <div>
-                          <span className={`prac-badge ${prob.difficulty.toLowerCase()}`}>
-                            {prob.difficulty.charAt(0) + prob.difficulty.slice(1).toLowerCase()}
-                          </span>
-                        </div>
-
-                        {/* Companies */}
-                        <div className="prac-col-companies">
-                          {prob.companies.slice(0, 2).map((comp) => (
-                            <span key={comp} className="prac-company-tag">
-                              {comp}
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* External Link */}
-                        <div style={{ display: "flex", justifyContent: "center" }}>
-                          <span 
-                            className="prac-col-link" 
-                            title="Mock Practice"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/setup`);
-                            }}
-                          >
-                            <ExternalLink size={16} />
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </main>
-          </>
-        )}
-      </div>
-
-      {/* Floating Action Button (FAB) for AI Companion */}
-      {selectedProblem && (
-        <button 
-          className="prac-fab" 
-          aria-label="AI Companion"
-          onClick={() => setIsDrawerOpen(true)}
-        >
-          <Sparkles size={22} fill="#ffffff" stroke="none" />
-        </button>
-      )}
-
-      {/* Slide-out AI Helper Drawer (FAB Clicked modal) */}
-      {isDrawerOpen && selectedProblem && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0,0,0,0.25)",
-          backdropFilter: "blur(4px)",
-          zIndex: 200,
-          display: "flex",
-          justifyContent: "flex-end"
-        }}>
-          {/* Backdrop Click */}
-          <div style={{ flex: 1 }} onClick={() => setIsDrawerOpen(false)} />
-          
-          {/* Drawer Body */}
-          <div style={{
-            width: "420px",
-            background: "#ffffff",
-            boxShadow: "-4px 0 24px rgba(0,0,0,0.06)",
-            height: "100%",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "space-between",
-            padding: "2rem",
-            position: "relative"
-          }}>
-            <button 
-              style={{
-                position: "absolute",
-                top: "1.5rem",
-                right: "1.5rem",
-                background: "none",
-                border: "none",
-                color: "#888",
-                cursor: "pointer"
-              }}
-              onClick={() => setIsDrawerOpen(false)}
-            >
-              <X size={20} />
-            </button>
-
-            <div>
-              <span style={{ fontSize: "0.72rem", color: "#dea63b", fontWeight: 700, letterSpacing: "0.08em", display: "block", marginBottom: "0.5rem" }}>
-                AI COMPANION // {activeCategory.toUpperCase()}
-              </span>
-              <h2 style={{ fontFamily: "var(--font-display)", fontSize: "1.35rem", color: "#1a1a1a", fontWeight: 700, marginBottom: "1.5rem" }}>
-                {selectedProblem.title}
-              </h2>
-
-              {/* Hints list */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
-                {selectedProblem.hints.map((hint, index) => {
-                  const isActive = index === activeHintIndex;
-                  return (
-                    <div 
-                      key={index}
-                      style={{
-                        border: "1px solid",
-                        borderColor: isActive ? "#f9e2b3" : "#e8e5de",
-                        borderRadius: "8px",
-                        padding: "1rem",
-                        background: isActive ? "#fdf6e8" : "#ffffff",
-                        cursor: "pointer",
-                        transition: "all 0.2s"
-                      }}
-                      onClick={() => setActiveHintIndex(index)}
-                    >
-                      <h3 style={{ fontSize: "0.74rem", fontWeight: 700, color: isActive ? "#dea63b" : "#666", marginBottom: "0.35rem" }}>
-                        {hint.title}
-                      </h3>
-                      {isActive && (
-                        <p style={{ fontSize: "0.82rem", color: "#444", lineHeight: 1.45 }}>
-                          {hint.content}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Terminal Notes / AI Strategy */}
-              <div style={{ marginTop: "2rem" }}>
-                <span style={{ fontSize: "0.72rem", color: "#888", fontWeight: 700, display: "block", marginBottom: "0.55rem" }}>
-                  STRATEGY LOGS
+              <div className="track-search-bar">
+                <span className="track-search-icon">
+                  <Search size={18} />
                 </span>
-                <pre style={{
-                  background: "#faf9f6",
-                  border: "1px solid #e8e5de",
-                  borderRadius: "6px",
-                  padding: "1rem",
-                  fontFamily: "monospace",
-                  fontSize: "0.74rem",
-                  color: "#166534",
-                  whiteSpace: "pre-wrap",
-                  lineHeight: 1.5
-                }}>
-                  {selectedProblem.terminal_notes}
-                </pre>
+                <input
+                  type="text"
+                  className="track-search-input"
+                  placeholder="Search companies..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
             </div>
 
-            <button 
-              className="prac-btn-unlock" 
-              onClick={() => {
-                setIsDrawerOpen(false);
-                router.push(`/setup`);
-              }}
-            >
-              Start Interview Sandbox
-            </button>
-          </div>
-        </div>
-      )}
+            {/* Grid of Company Track Cards */}
+            <div className="track-grid">
+              {filteredCompanies.length === 0 ? (
+                <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem", color: "#78716c" }}>
+                  No companies match your search.
+                </div>
+              ) : (
+                filteredCompanies.map((company) => (
+                  <div key={company.id} className="company-card">
+                    <div>
+                      {/* Logo and Difficulty badge */}
+                      <div className="card-top-row">
+                        {renderLogoIcon(company.name)}
+                        <span className={`difficulty-pill ${company.difficulty === 'HARD' ? 'diff-hard' : company.difficulty === 'MEDIUM' ? 'diff-medium' : 'diff-easy'}`}>
+                          {company.difficulty}
+                        </span>
+                      </div>
+
+                      {/* Info */}
+                      <h2 className="company-card-name">{company.name}</h2>
+                      <p className="company-card-desc">{company.description}</p>
+
+                      {/* Tech stack/Tags */}
+                      <div className="company-tags-row">
+                        {(company.tags || []).map((tag) => (
+                          <span key={tag} className="company-tag">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      {/* Stat counters */}
+                      <div className="company-counts-row">
+                        <div className="count-item">
+                          <Code size={14} />
+                          <span>{company.problems_count} problems</span>
+                        </div>
+                        <div className="count-item">
+                          <MessageSquare size={14} />
+                          <span>{company.mock_questions_count} mock questions</span>
+                        </div>
+                      </div>
+
+                      {/* Call to Action */}
+                      <button
+                        type="button"
+                        className="btn-open-track"
+                        onClick={() => router.push(`/practice/${company.name.toLowerCase()}`)}
+                      >
+                        Open Track
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Bottom Marketing Blueprint Banner */}
+            <div className="blueprint-banner">
+              <div className="blueprint-content">
+                <span className="blueprint-label">NEW GUIDE</span>
+                <h2 className="blueprint-title">The FAANG Blueprint 2026</h2>
+                <p className="blueprint-desc">
+                  A comprehensive 12-week schedule designed by engineers from Google and Meta to help you master the fundamentals.
+                </p>
+                <button
+                  type="button"
+                  className="btn-blueprint-cta"
+                  onClick={() => router.push("/setup")}
+                >
+                  <span>Get Started</span>
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+
+              {/* Graphic mock image box */}
+              <div className="blueprint-img-wrap">
+                <div 
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    background: "linear-gradient(135deg, #a855f7 0%, #3b82f6 100%)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    color: "#ffffff",
+                    fontFamily: "monospace",
+                    fontSize: "0.85rem",
+                    padding: "1rem",
+                    textAlign: "center"
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "0.5rem" }}>FAANG Battle Plan</div>
+                  <div style={{ opacity: 0.8 }}>// 12 Weeks to Mastery</div>
+                  <div style={{ opacity: 0.8, fontSize: "0.7rem", marginTop: "1rem" }}>Arrays · Graphs · Dynamic Programming · System Design</div>
+                </div>
+              </div>
+
+              <div className="blueprint-bg-glow"></div>
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }

@@ -415,7 +415,7 @@ export default function SetupPage() {
       {/* Footer matches mockup */}
       <footer className="msetup-footer">
         <span className="msetup-footer-left">
-          © 2024 Prepora. The Encouraging Mentor.
+          © 2026 Prepora. The Encouraging Mentor.
         </span>
         <div className="msetup-footer-right">
           <Link href="/setup" className="msetup-footer-link">

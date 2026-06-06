@@ -13,7 +13,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   // Pages that need a full-screen dynamic view without global headers/footers and margins
   const isFullScreen = 
     normalizedPath === "/dashboard" || 
-    normalizedPath === "/practice" ||
+    normalizedPath.startsWith("/practice") ||
     normalizedPath === "/progress" ||
     normalizedPath === "/login" ||
     normalizedPath === "/signup" ||
@@ -24,12 +24,11 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   // Determine if this is a light-themed cream page
   const isLightPage = 
     normalizedPath === "/dashboard" || 
-    normalizedPath === "/practice" ||
+    normalizedPath.startsWith("/practice") ||
     normalizedPath === "/progress" ||
     normalizedPath === "/login" ||
     normalizedPath === "/signup" ||
     normalizedPath === "/setup" ||
-    normalizedPath.startsWith("/interview") || 
     normalizedPath.startsWith("/report");
 
   // Dynamically toggle the light-theme class on html and body tags

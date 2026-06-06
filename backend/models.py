@@ -65,3 +65,62 @@ class InterviewQuestion(Base):
 
     # Relationships
     session = relationship("InterviewSession", back_populates="questions")
+
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, unique=True, index=True, nullable=False)
+    description = Column(Text, nullable=False)
+    difficulty = Column(String, nullable=False)
+    tags = Column(JSON, nullable=True)  # List[str]
+    problems_count = Column(Integer, default=0)
+    mock_questions_count = Column(Integer, default=0)
+
+    # Relationships
+    problems = relationship("TrackProblem", back_populates="company", cascade="all, delete-orphan")
+    tips = relationship("CompanyTip", back_populates="company", cascade="all, delete-orphan")
+    user_tips = relationship("UserFeedbackTip", back_populates="company", cascade="all, delete-orphan")
+
+
+class TrackProblem(Base):
+    __tablename__ = "track_problems"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    difficulty = Column(String, nullable=False)
+    topic = Column(String, nullable=False)
+    link = Column(String, default="/setup")
+
+    # Relationships
+    company = relationship("Company", back_populates="problems")
+
+
+class CompanyTip(Base):
+    __tablename__ = "company_tips"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    order = Column(Integer, default=0)
+
+    # Relationships
+    company = relationship("Company", back_populates="tips")
+
+
+class UserFeedbackTip(Base):
+    __tablename__ = "user_feedback_tips"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    author = Column(String, nullable=False)
+    time_ago = Column(String, nullable=False)
+    likes = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    company = relationship("Company", back_populates="user_tips")

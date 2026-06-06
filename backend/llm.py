@@ -143,24 +143,33 @@ async def generate_next_question(role: str, level: str, transcript: List[Dict[st
     current_question_number = len(transcript) + 1
     
     prompt = (
-        f"You are an expert interviewer conducting a {level}-level {role} interview.\n"
+        f"You are an expert, conversational, and direct technical interviewer conducting a {level}-level {role} interview.\n"
         f"Candidate's Tech Stack: {tech_stack_str}\n"
-        f"This is a 5-question interview. The candidate is currently on question {current_question_number} of 5.\n\n"
-        f"Here is the transcript so far:\n\n{transcript_str}"
-        f"Guidelines for this turn:\n"
+        f"This is a 5-question interview. The candidate has completed {len(transcript)} turns and is now on question {current_question_number} of 5.\n\n"
+        f"Here is the transcript of the interview so far:\n"
+        f"-----\n"
+        f"{transcript_str}"
+        f"-----\n\n"
+        f"CRITICAL GUIDELINE FOR A REAL INTERVIEWER:\n"
+        f"A great interviewer listens carefully to the candidate's last response and decides if it warrants a follow-up probe or a new question:\n"
+        f"1. Examine the candidate's LAST response. If it is short, vague, lacks detail, fails to discuss design trade-offs, "
+        f"or has potential bugs/inefficiencies (such as a slow O(N^2) time complexity or unhandled edge cases in a coding problem), "
+        f"generate a direct, specific follow-up question asking them to explain, optimize, clarify, or refine their approach. "
+        f"Do not introduce a new topic in this case. Speak like a real interviewer digging deeper (e.g., 'In your answer you mentioned... but how would you handle...', or 'Your approach works, but what is its time complexity and can we do better?').\n"
+        f"2. If the candidate's last response was already comprehensive, deep, and complete (or if the transition to a new round is necessary, e.g. starting the DSA coding round), "
+        f"then generate the next question according to the stage guidelines below:\n\n"
+        f"STAGE GUIDELINES for question {current_question_number}:\n"
     )
     
     if current_question_number in [3, 4]:
         prompt += (
-            f"- This is the Data Structures and Algorithms (DSA) round! Present a specific, clear algorithmic coding problem "
-            f"appropriate for a {level} level (e.g. dynamic programming, string manipulation, binary trees, arrays). "
-            f"Ask them to explain their algorithmic approach, write code/pseudocode, and analyze the Big O time and space complexities. "
-            f"Do not give the solution. Ensure the question is presented clearly."
+            f"- This is the Data Structures and Algorithms (DSA) round. If you are starting this round, present a specific, clear algorithmic coding problem "
+            f"appropriate for a {level} level (e.g., dynamic programming, string manipulation, binary trees, arrays, graphs). Ask them to explain their approach "
+            f"and analyze time and space complexities. If they are already in the DSA round, ask them to optimize their previous approach or address key edge cases."
         )
     elif current_question_number == 5:
         prompt += (
-            f"- This is the final question. Either ask a follow-up optimization question on their previous algorithmic solution, "
-            f"or ask a system design / behavioral question to wrap up the interview."
+            f"- This is the final question. Either ask a follow-up optimization question on their DSA solution, or ask a system design / behavioral question to wrap up."
         )
     else:
         prompt += (
@@ -168,7 +177,8 @@ async def generate_next_question(role: str, level: str, transcript: List[Dict[st
         )
         
     prompt += (
-        f"\n\nRespond with ONLY the question text itself. Do not include any pleasantries, headers, or conversational intros."
+        f"\n\nRespond with ONLY the question text itself. Do not include any greeting, pleasantries, introductory phrases (like 'Here is the next question:'), or markdown metadata. "
+        f"The response must be exactly what the interviewer says to the candidate."
     )
     
     try:

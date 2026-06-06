@@ -19,7 +19,9 @@ import {
   ChevronDown,
   ChevronUp,
   X,
-  Timer
+  Timer,
+  Lock,
+  Unlock
 } from "lucide-react";
 
 interface Question {
@@ -71,7 +73,8 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   const [isCamActive, setIsCamActive] = useState(false);
   const [isMicActive, setIsMicActive] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
-  const [micLevel, setMicLevel] = useState(0);
+  const audioBarRef = useRef<HTMLDivElement | null>(null);
+  const micLevelRef = useRef(0);
 
   // Proctoring/Cheating prevention state
   const [violations, setViolations] = useState(0);
@@ -90,6 +93,75 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [proctorOpen, setProctorOpen] = useState(false);
+  const [transcriptText, setTranscriptText] = useState("");
+  const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [initializingFeeds, setInitializingFeeds] = useState(false);
+
+  interface FeedbackChip {
+    id: string;
+    type: "complexity" | "filler" | "incorrect";
+    label: string;
+    value: string;
+  }
+
+  const [feedbackChips, setFeedbackChips] = useState<FeedbackChip[]>([]);
+
+  // Sync typed answer with transcript if not speaking
+  useEffect(() => {
+    if (!isListening && answerText) {
+      setTranscriptText(answerText);
+    }
+  }, [answerText, isListening]);
+
+  // Analyze transcript text for dynamic micro-feedback chips
+  useEffect(() => {
+    const text = (transcriptText || "").toLowerCase();
+    const newChips: FeedbackChip[] = [];
+
+    if (text.includes("redis") || text.includes("cache") || text.includes("central storage")) {
+      newChips.push({
+        id: "redis",
+        type: "complexity",
+        label: "Good Complexity Mention",
+        value: "Redis central storage"
+      });
+    }
+    if (text.includes("token bucket") || text.includes("rate limit") || text.includes("sliding window")) {
+      newChips.push({
+        id: "algorithm",
+        type: "complexity",
+        label: "Good Complexity Mention",
+        value: "Token bucket algorithm"
+      });
+    }
+    if (text.includes("postgres") || text.includes("database") || text.includes("nosql")) {
+      newChips.push({
+        id: "db",
+        type: "complexity",
+        label: "Good Complexity Mention",
+        value: "Database persistence"
+      });
+    }
+    if (text.includes("basically") || text.includes(" um ") || text.includes(" like ") || text.includes(" actually ")) {
+      newChips.push({
+        id: "filler-word",
+        type: "filler",
+        label: "Filler Word Detected",
+        value: "Filler: basically / like"
+      });
+    }
+    if (text.includes("stateless") || text.includes("spof") || text.includes("single server")) {
+      newChips.push({
+        id: "assumption",
+        type: "incorrect",
+        label: "Incorrect Assumption",
+        value: "Assumption: single server bottleneck"
+      });
+    }
+
+    setFeedbackChips(newChips);
+  }, [transcriptText]);
 
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
@@ -352,13 +424,39 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
           }
           const average = sum / len;
           // Scale from 0 to 100 level
-          setMicLevel(Math.min(100, Math.round((average / 128) * 100)));
+          const val = Math.min(100, Math.round((average / 128) * 100));
+          micLevelRef.current = val;
+          if (audioBarRef.current) {
+            audioBarRef.current.style.width = `${val}%`;
+          }
+
+          // Direct DOM manipulation for high-performance soundwave rendering
+          const soundwaveBars = document.querySelectorAll(".int-soundwave-bar");
+          soundwaveBars.forEach((bar: any) => {
+            const factor = 0.5 + Math.random() * 1.5;
+            const barHeight = Math.max(8, Math.min(48, Math.round((val / 100) * 40 * factor)));
+            bar.style.height = `${barHeight}px`;
+          });
+
+          // Direct DOM manipulation for confidence indicator bars
+          const confidenceBars = document.querySelectorAll(".int-confidence-bar");
+          const activeCount = val > 0 ? Math.max(1, Math.min(5, Math.ceil(val / 20))) : 3;
+          confidenceBars.forEach((bar: any, idx) => {
+            if (idx < activeCount) {
+              bar.classList.add("active");
+            } else {
+              bar.classList.remove("active");
+            }
+          });
         };
       } catch (err) {
         console.error("Audio level monitor setup error:", err);
       }
     } else {
-      setMicLevel(0);
+      micLevelRef.current = 0;
+      if (audioBarRef.current) {
+        audioBarRef.current.style.width = "0%";
+      }
     }
 
     return () => {
@@ -368,38 +466,14 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     };
   }, [micStream, isMicActive]);
 
-  // 5. Automatic Media Permissions Hook (on mount)
+  // 5. Automatic Media Cleanup Hook (on unmount)
   useEffect(() => {
-    const requestStreams = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        
-        // Split track streams
-        const videoStr = new MediaStream(stream.getVideoTracks());
-        const audioStr = new MediaStream(stream.getAudioTracks());
-
-        setCamStream(videoStr);
-        setIsCamActive(true);
-        const videoElement = document.getElementById("webcam") as HTMLVideoElement;
-        if (videoElement) {
-          videoElement.srcObject = videoStr;
-        }
-
-        setMicStream(audioStr);
-        setIsMicActive(true);
-      } catch (err) {
-        console.warn("Media permissions auto-start rejected or failed:", err);
-      }
-    };
-    requestStreams();
-
     return () => {
-      // Cleanup streams on unmount
       if (camStream) camStream.getTracks().forEach(t => t.stop());
       if (micStream) micStream.getTracks().forEach(t => t.stop());
       if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     };
-  }, []);
+  }, [camStream, micStream, screenStream]);
 
   // Media toggle handlers
   const toggleCamera = async () => {
@@ -484,6 +558,68 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     }
   };
 
+  const handleInitializeWorkspace = async () => {
+    setInitializingFeeds(true);
+    setError(null);
+    try {
+      // 1. Request Webcam and Mic
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const videoStr = new MediaStream(stream.getVideoTracks());
+      const audioStr = new MediaStream(stream.getAudioTracks());
+      
+      setCamStream(videoStr);
+      setIsCamActive(true);
+      
+      setMicStream(audioStr);
+      setIsMicActive(true);
+
+      // 2. Request Screen Sharing
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      setScreenStream(displayStream);
+      setIsSharingScreen(true);
+
+      // Set screenshare disconnect handler
+      displayStream.getVideoTracks()[0].onended = () => {
+        setScreenStream(null);
+        setIsSharingScreen(false);
+        if (!cheatingLocked) {
+          addViolation("Screen Sharing Stopped", "Interview guidelines require active screen sharing. Stopping the stream triggers a proctor alert.");
+        }
+      };
+
+      // 3. Request Strict Fullscreen
+      await requestStrictFullscreen();
+
+      // 4. Everything is ready!
+      setWorkspaceReady(true);
+      logProctorEvent("Secure workspace feed initialization complete.", "info");
+
+      // Speak the first question now that user clicked "Begin" (transient user gesture confirmed)
+      if (currentQuestion && !currentQuestion.user_answer && session?.mode === "voice") {
+        setTimeout(() => {
+          speakQuestion(currentQuestion.question_text);
+        }, 800);
+      }
+
+      // Bind webcam and screenshare srcObject (delayed by DOM mount)
+      setTimeout(() => {
+        const videoElement = document.getElementById("webcam") as HTMLVideoElement;
+        if (videoElement) {
+          videoElement.srcObject = videoStr;
+        }
+        const screenElement = document.getElementById("screenshare") as HTMLVideoElement;
+        if (screenElement) {
+          screenElement.srcObject = displayStream;
+        }
+      }, 500);
+
+    } catch (err: any) {
+      console.error("Secure workspace feed initialization failed:", err);
+      setError("Failed to initialize workspace feeds. Both camera and screen sharing access are strictly required to start this proctored session.");
+      setInitializingFeeds(false);
+    }
+  };
+
   // 6. Active Proctor Feed Heuristics (Webcam Gaze / Audio Whisper check)
   useEffect(() => {
     if (cheatingLocked) return;
@@ -492,7 +628,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
     const interval = setInterval(() => {
       // A. Microphone whisper/talking check
-      if (isMicActive && micLevel > 45 && !isAiSpeaking && !isListening) {
+      if (isMicActive && micLevelRef.current > 45 && !isAiSpeaking && !isListening) {
         micHighCount += 1;
         if (micHighCount >= 3) {
           addViolation("Microphone Whisper / Help", "Sustained secondary audio or whisper patterns detected in room.");
@@ -544,7 +680,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isCamActive, isMicActive, micLevel, isAiSpeaking, isListening, cheatingLocked]);
+  }, [isCamActive, isMicActive, isAiSpeaking, isListening, cheatingLocked]);
 
   // Fetch Interview State
   const fetchSessionData = async () => {
@@ -566,8 +702,8 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
       const activeQ = sortedQs.find(q => q.user_answer === null) || sortedQs[sortedQs.length - 1];
       setCurrentQuestion(activeQ || null);
       
-      // Speak question in voice mode
-      if (data.mode === "voice" && activeQ && !activeQ.user_answer) {
+      // Speak question in voice mode (only if workspace is initialized to prevent browser security blocks)
+      if (data.mode === "voice" && activeQ && !activeQ.user_answer && workspaceReady) {
         setTimeout(() => {
           speakQuestion(activeQ.question_text);
         }, 800);
@@ -610,6 +746,10 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
               const cleanedPrev = prev.trim();
               return cleanedPrev ? `${cleanedPrev} ${finalTranscript}` : finalTranscript;
             });
+            setTranscriptText((prev) => {
+              const cleanedPrev = prev.trim();
+              return cleanedPrev ? `${cleanedPrev} ${finalTranscript}` : finalTranscript;
+            });
           }
         };
 
@@ -642,12 +782,24 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     synthRef.current.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
     const voices = synthRef.current.getVoices();
-    const premiumVoice = voices.find(
-      (v) => v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha")
+    // Prioritize English voices, then premium names
+    let selectedVoice = voices.find(
+      (v) => v.lang.startsWith("en") && (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
     );
-    if (premiumVoice) {
-      utterance.voice = premiumVoice;
+    if (!selectedVoice) {
+      // Fallback to any English voice
+      selectedVoice = voices.find((v) => v.lang.startsWith("en"));
+    }
+    if (!selectedVoice) {
+      // Fallback to first available voice
+      selectedVoice = voices[0];
+    }
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
     
     utterance.onstart = () => setIsAiSpeaking(true);
@@ -728,6 +880,60 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     fetchSessionData();
   };
 
+  const handleSkipQuestion = async () => {
+    if (submitting || !currentQuestion) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}/respond`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          answer: "[Question skipped by candidate]"
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to skip question.");
+      }
+
+      const data = await response.json();
+      
+      if (data.is_finished) {
+        setEvaluation({
+          critique: data.critique,
+          score: data.score,
+          model_answer: data.model_answer
+        });
+        setIsFinished(true);
+        if (session?.mode === "voice" && !isMuted) {
+          speakQuestion("Question skipped. That completes our mock interview session. Let's review the final report.");
+        }
+      } else {
+        setEvaluation(null);
+        setAnswerText("");
+        setShowHint(false);
+        await fetchSessionData();
+        if (session?.mode === "voice" && !isMuted) {
+          speakQuestion("Question skipped. Moving to the next question.");
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError("Failed to skip your question. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleEndInterview = async () => {
     setSubmitting(true);
     
@@ -786,14 +992,28 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   };
 
   if (loading) {
-    return <div style={{ textAlign: "center", padding: "10rem", color: "var(--muted)", background: "#f8f6f1", minHeight: "100vh" }}>Loading proctored interview workspace...</div>;
+    return (
+      <div style={{ 
+        display: "flex", 
+        flexDirection: "column", 
+        alignItems: "center", 
+        justifyContent: "center", 
+        background: "#050505", 
+        color: "var(--primary)", 
+        minHeight: "100vh",
+        gap: "1.5rem"
+      }}>
+        <div style={{ width: "40px", height: "40px", border: "3px solid rgba(242, 166, 50, 0.15)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <span style={{ fontFamily: "var(--font-display)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", fontSize: "0.9rem" }}>Loading proctored interview workspace...</span>
+      </div>
+    );
   }
 
   if (error && !currentQuestion) {
     return (
-      <div className="glass-card" style={{ maxWidth: "600px", margin: "6rem auto", padding: "2rem", textAlign: "center", background: "#ffffff" }}>
-        <h2 style={{ color: "var(--error)", marginBottom: "1rem" }}>Workspace Error</h2>
-        <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>{error}</p>
+      <div className="glass-card" style={{ maxWidth: "600px", margin: "8rem auto", padding: "2.5rem", textAlign: "center", background: "rgba(10, 10, 10, 0.6)", borderColor: "rgba(239, 68, 68, 0.3)" }}>
+        <h2 style={{ color: "var(--error)", marginBottom: "1rem", fontFamily: "var(--font-display)", fontWeight: 800 }}>Workspace Error</h2>
+        <p style={{ color: "var(--muted)", marginBottom: "2rem", fontSize: "0.95rem", lineHeight: 1.5 }}>{error}</p>
         <button className="btn btn-secondary" onClick={() => router.push("/dashboard")}>Back to Dashboard</button>
       </div>
     );
@@ -803,20 +1023,97 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   const currentNum = currentQuestion?.question_order || 1;
   const totalNum = 5; // Fixed 5 questions in database logic
 
+  // Dynamic metrics scores
+  const eyeDots = detectedCheats.includes("Webcam Look-Away Detected") ? 1 : 3;
+  const pacingDots = isListening ? 3 : 2;
+  const fillerDots = feedbackChips.some(c => c.type === "filler") ? 2 : 0;
+
+  if (!workspaceReady) {
+    return (
+      <div className="int-init-overlay">
+        <div className="int-init-card">
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "1.25rem" }}>
+            <div style={{ display: "inline-flex", padding: "1rem", borderRadius: "50%", background: "rgba(242, 166, 50, 0.05)", border: "1px solid rgba(242, 166, 50, 0.15)", color: "var(--primary)" }}>
+              <ShieldAlert size={36} />
+            </div>
+          </div>
+          
+          <h2 className="int-init-title">Secure Workspace Setup</h2>
+          <p className="int-init-desc">
+            To begin this mock session, please grant camera, microphone, and screen sharing access. These feeds are analyzed locally for exam integrity.
+          </p>
+
+          <div className="int-init-feeds-list">
+            <div className="int-init-feed-item">
+              <span className="int-init-feed-label">
+                <Video size={16} style={{ color: isCamActive && isMicActive ? "#10b981" : "var(--primary)" }} />
+                Webcam & Microphone Feed
+              </span>
+              <span className={`int-init-feed-status ${isCamActive && isMicActive ? 'granted' : 'pending'}`}>
+                {isCamActive && isMicActive ? 'Ready' : 'Pending'}
+              </span>
+            </div>
+
+            <div className="int-init-feed-item">
+              <span className="int-init-feed-label">
+                <Monitor size={16} style={{ color: isSharingScreen ? "#10b981" : "var(--primary)" }} />
+                Screen Share Stream
+              </span>
+              <span className={`int-init-feed-status ${isSharingScreen ? 'granted' : 'pending'}`}>
+                {isSharingScreen ? 'Ready' : 'Pending'}
+              </span>
+            </div>
+          </div>
+
+          {error && (
+            <div style={{ color: "#ef4444", fontSize: "0.82rem", marginBottom: "1.5rem", textAlign: "left", lineHeight: 1.4, display: "flex", gap: "0.35rem" }}>
+              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="int-init-btn-start"
+            onClick={handleInitializeWorkspace}
+            disabled={initializingFeeds || loading || !currentQuestion}
+          >
+            {initializingFeeds ? (
+              <>
+                <span style={{ width: "1.1rem", height: "1.1rem", border: "2px solid #050505", borderRightColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite", marginRight: "0.5rem" }} />
+                <span>Configuring Workspace...</span>
+              </>
+            ) : loading ? (
+              <>
+                <span style={{ width: "1.1rem", height: "1.1rem", border: "2px solid #050505", borderRightColor: "transparent", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite", marginRight: "0.5rem" }} />
+                <span>Loading Session...</span>
+              </>
+            ) : (
+              <>
+                <span>GRANT FEEDS & BEGIN</span>
+                <ArrowRight size={16} />
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="int-page">
       {/* 1. Cheating detection dialog */}
       {cheatingLocked && (
         <div className="int-cheat-overlay" style={{ zIndex: 9999 }}>
-          <div className="int-cheat-modal" style={{ borderColor: "#ef4444", background: "#fdf8f8" }}>
+          <div className="int-cheat-modal">
             <div style={{ display: "flex", justifyContent: "center", marginBottom: "0.75rem" }}>
               <ShieldAlert size={64} color="#ef4444" style={{ animation: "bounce 1s infinite" }} />
             </div>
             <h3 className="int-cheat-title" style={{ fontSize: "1.6rem" }}>Interview Terminated</h3>
-            <p className="int-cheat-text" style={{ fontSize: "1rem", color: "#851e1e", fontWeight: 600 }}>
+            <p className="int-cheat-text" style={{ fontSize: "1rem", color: "#f87171", fontWeight: 600 }}>
               This session has been terminated due to exceeding the maximum allowance of 5 proctor violations.
             </p>
-            <p className="int-cheat-text" style={{ fontSize: "0.85rem", color: "#555" }}>
+            <p className="int-cheat-text" style={{ fontSize: "0.85rem", color: "#8e8e93" }}>
               Your workspace has been locked, your integrity violations have been compiled, and grades adjusted accordingly.
               Redirecting you to the performance scorecard report...
             </p>
@@ -855,17 +1152,10 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
       {/* 2. Top Header Bar */}
       <header className="int-header">
         <span className="int-header-left">
-          MOCK INTERVIEW — {roleTitle.toUpperCase()}
+          SESSION 1/1 &nbsp;&middot;&nbsp; {roleTitle.toUpperCase()} &nbsp;&nbsp;&middot;&nbsp;&nbsp; 
+          <Timer size={14} style={{ display: 'inline', verticalAlign: 'middle', color: 'var(--primary)', marginRight: '4px', marginTop: '-2px' }} /> 
+          <span style={{ color: 'var(--primary)', fontVariantNumeric: 'tabular-nums' }}>{formatTimer(timeLeft)}</span>
         </span>
-
-        <div className="int-header-timer" title="Time remaining">
-          <Timer size={18} />
-          <span>{formatTimer(timeLeft)}</span>
-        </div>
-
-        <button className="int-header-btn-end" onClick={handleEndInterview}>
-          End Session
-        </button>
       </header>
 
       {/* 3. Split Layout */}
@@ -873,21 +1163,83 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
         
         {/* Left Workspace (Exam flow) */}
         <main className="int-workspace">
+          {/* AI Avatar Face Animation */}
+          <div className="ai-avatar-container">
+            <div className="ai-avatar-wrapper">
+              <div className="ai-avatar-outer"></div>
+              <div className="ai-avatar-mid"></div>
+              <div className="ai-avatar-inner">
+                <div className="ai-avatar-face">
+                  <div className="ai-avatar-axis"></div>
+                  <div 
+                    className="ai-avatar-eye left ai-eye-blink"
+                    style={{
+                      transform: detectedCheats.includes("Webcam Look-Away Detected") 
+                        ? "translateX(-3px) rotate(45deg) scale(0.9)" 
+                        : "rotate(45deg)"
+                    }}
+                  ></div>
+                  <div 
+                    className="ai-avatar-eye right ai-eye-blink"
+                    style={{
+                      transform: detectedCheats.includes("Webcam Look-Away Detected") 
+                        ? "translateX(-3px) rotate(45deg) scale(0.9)" 
+                        : "rotate(45deg)"
+                    }}
+                  ></div>
+                  <svg className="ai-avatar-smile" viewBox="0 0 100 100">
+                    <path d="M 25 50 Q 50 68 75 50" fill="none" stroke="#f2a632" strokeWidth="2.5" strokeDasharray="3 3" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Soundwave Visualizer */}
+          <div className="int-soundwave-wrapper">
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+            <div className={`int-soundwave-bar ${(isListening || isAiSpeaking) ? 'animating' : ''}`}></div>
+          </div>
           
           {/* Question Card */}
           <div className="int-q-card">
-            <span className="int-q-number">Question {currentNum} of {totalNum}</span>
-            <h2 className="int-q-text">{currentQuestion?.question_text}</h2>
+            <span className="int-q-number">CURRENT PROMPT</span>
+            <h2 className="int-q-text">Q{currentNum}: {currentQuestion?.question_text}</h2>
             
             {/* Show Hint Toggle */}
-            <button 
-              type="button" 
-              className="int-btn-hint" 
-              onClick={() => setShowHint(!showHint)}
-            >
-              <span>💡 {showHint ? "Hide Hint" : "Show Hint"}</span>
-              {showHint ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-            </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button 
+                type="button" 
+                className="int-btn-hint" 
+                onClick={() => setShowHint(!showHint)}
+              >
+                <span>💡 {showHint ? "Hide Hint" : "Show Hint"}</span>
+                {showHint ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              
+              <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.05em", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                HINTS: 
+                {showHint ? (
+                  <>
+                    <Unlock size={11} style={{ color: "var(--primary)" }} />
+                    <Unlock size={11} style={{ color: "var(--primary)" }} />
+                    <Unlock size={11} style={{ color: "var(--primary)" }} />
+                  </>
+                ) : (
+                  <>
+                    <Lock size={11} style={{ color: "var(--muted)" }} />
+                    <Lock size={11} style={{ color: "var(--muted)" }} />
+                    <Lock size={11} style={{ color: "var(--muted)" }} />
+                  </>
+                )}
+              </span>
+            </div>
 
             {/* Hint Box */}
             {showHint && (
@@ -896,328 +1248,328 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
               </div>
             )}
           </div>
+        </main>
 
-          {/* Answer Area */}
-          <div className="int-answer-section">
-            <div className="int-answer-label-row">
-              <span className="int-answer-label">YOUR ANSWER</span>
-              <span className="int-autosave-text">Auto-saving...</span>
+        {/* Right Two-Panel Workspace */}
+        <aside className="int-right-panel">
+          {/* Top Panel: Scratchpad */}
+          <div className="int-scratchpad-panel">
+            <div className="int-panel-header">
+              <span className="int-panel-title">SCRATCHPAD.md</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <span className="int-est-score">
+                  EST. SCORE: {evaluation ? `${evaluation.score / 10} / 10` : "-- / 10"}
+                </span>
+                
+                {/* Floating Proctor Toggle */}
+                <button 
+                  type="button"
+                  className="int-proctor-float-btn" 
+                  onClick={() => setProctorOpen(!proctorOpen)}
+                  title="Toggle Proctoring Camera & Compliance"
+                  style={{ color: proctorOpen ? "var(--primary)" : "#8e8e93" }}
+                >
+                  <Video size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Floating Proctor Drawer */}
+            {proctorOpen && (
+              <div className="int-proctor-float-panel">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "0.35rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>AI Proctoring Desk</span>
+                  <button type="button" style={{ background: "none", border: "none", color: "#8e8e93", cursor: "pointer" }} onClick={() => setProctorOpen(false)}>
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {/* Camera preview */}
+                <div className="int-media-box">
+                  <div className="int-media-label">
+                    <span>Webcam Feed</span>
+                    <span className="int-media-indicator" style={{ color: isCamActive ? "#10b981" : "#ef4444" }}>
+                      <span className={`int-indicator-dot ${isCamActive ? "active" : ""}`} />
+                      {isCamActive ? "active" : "disabled"}
+                    </span>
+                  </div>
+                  <video id="webcam" autoPlay playsInline muted className="int-video-feed" />
+                  <button 
+                    type="button" 
+                    className={`int-btn-media-control ${isCamActive ? "active" : ""}`}
+                    onClick={toggleCamera}
+                  >
+                    <Video size={12} />
+                    <span>{isCamActive ? "Disable Webcam" : "Enable Webcam"}</span>
+                  </button>
+                </div>
+
+                {/* Screen share preview */}
+                <div className="int-media-box">
+                  <div className="int-media-label">
+                    <span>Screen Share Stream</span>
+                    <span className="int-media-indicator" style={{ color: isSharingScreen ? "#10b981" : "#ef4444" }}>
+                      <span className={`int-indicator-dot ${isSharingScreen ? "active" : ""}`} />
+                      {isSharingScreen ? "active" : "disabled"}
+                    </span>
+                  </div>
+                  <video id="screenshare" autoPlay playsInline className="int-video-feed" style={{ display: isSharingScreen ? "block" : "none" }} />
+                  {!isSharingScreen && (
+                    <div style={{ height: "90px", background: "#111", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", color: "#555", fontWeight: 600, border: "1px solid rgba(255, 255, 255, 0.03)" }}>
+                      Screen stream inactive
+                    </div>
+                  )}
+                  <button 
+                    type="button" 
+                    className={`int-btn-media-control ${isSharingScreen ? "active" : ""}`}
+                    onClick={toggleScreenShare}
+                  >
+                    <Monitor size={12} />
+                    <span>{isSharingScreen ? "Stop Sharing" : "Share Screen"}</span>
+                  </button>
+                </div>
+
+                {/* Microphone volume tracker */}
+                <div className="int-media-box">
+                  <div className="int-media-label">
+                    <span>Microphone Levels</span>
+                    <span className="int-media-indicator" style={{ color: isMicActive ? "#10b981" : "#ef4444" }}>
+                      <span className={`int-indicator-dot ${isMicActive ? "active" : ""}`} />
+                      {isMicActive ? "active" : "disabled"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                    <div className="int-audio-bar-bg">
+                      <div ref={audioBarRef} className="int-audio-bar-fill" style={{ width: "0%" }} />
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    className={`int-btn-media-control ${isMicActive ? "active" : ""}`}
+                    onClick={toggleMic}
+                  >
+                    <Mic size={12} />
+                    <span>{isMicActive ? "Disable Mic" : "Enable Mic"}</span>
+                  </button>
+                </div>
+
+                {/* Proctor Status List */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                  <div className="int-proctor-log-item">
+                    <span>Fullscreen Enforced</span>
+                    <span className={`int-proctor-log-value ${isFullscreenActive ? 'success' : 'danger'}`}>
+                      {isFullscreenActive ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+                  <div className="int-proctor-log-item">
+                    <span>Proctor Warnings</span>
+                    <span className={`int-proctor-log-value ${violations > 0 ? 'danger' : 'success'}`}>
+                      {violations} / 5
+                    </span>
+                  </div>
+                </div>
+
+                {/* Real-time Logs */}
+                <div style={{ fontSize: "0.68rem", fontFamily: "monospace", color: "#8e8e93", background: "rgba(5,5,5,0.4)", padding: "0.5rem", borderRadius: "4px", maxHeight: "100px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.03)" }}>
+                  {proctorLogs.length === 0 ? "Awaiting compliance logs..." : proctorLogs.map((log, idx) => (
+                    <div key={idx} style={{ borderBottom: "1px solid rgba(255,255,255,0.02)", padding: "0.15rem 0", color: log.severity === "danger" ? "#ef4444" : log.severity === "warning" ? "#f97316" : "#8e8e93" }}>
+                      [{log.time}] {log.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Answer Text Area Editor */}
+            <textarea
+              className="int-scratchpad-textarea"
+              placeholder="/* Think out loud here... pseudo-code, diagrams... */"
+              value={answerText}
+              onChange={(e) => setAnswerText(e.target.value)}
+              onCopy={(e) => e.preventDefault()}
+              onCut={(e) => e.preventDefault()}
+              onPaste={handlePreventCopyPaste}
+              disabled={submitting || !!evaluation}
+            />
+          </div>
+
+          {/* Bottom Panel: Real-Time Transcript or Performance critique */}
+          <div className="int-transcript-panel">
+            <div className="int-panel-header">
+              <span className="int-panel-title">
+                {evaluation ? "PERFORMANCE CRITIQUE" : "REAL-TIME TRANSCRIPT"}
+              </span>
             </div>
 
             {evaluation ? (
-              /* Evaluation Critique Card */
-              <div style={{
-                background: "#ffffff",
-                border: "1px solid #e8e5de",
-                borderRadius: "16px",
-                padding: "2rem",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.01)"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                  <h3 style={{ fontSize: "1.1rem", color: "#dea63b", fontWeight: 700, margin: 0 }}>
-                    Question Graded
-                  </h3>
-                  <span style={{ fontSize: "1.3rem", fontWeight: 800, color: evaluation.score >= 80 ? "#10b981" : "#f59e0b" }}>
+              /* Performance critique output */
+              <div style={{ flex: 1, padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1rem", background: "#060606" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Question Score Summary</span>
+                  <span style={{ fontSize: "1.2rem", fontWeight: 800, color: evaluation.score >= 80 ? "#10b981" : "#f59e0b" }}>
                     {evaluation.score} / 100
                   </span>
                 </div>
-                <p style={{ fontSize: "0.92rem", lineHeight: 1.5, color: "#1a1a1a", marginBottom: "1.25rem" }}>
+                
+                <p style={{ fontSize: "0.88rem", lineHeight: 1.5, color: "#e4e4e7" }}>
                   <strong>Critique:</strong> {evaluation.critique}
                 </p>
-                <div style={{ background: "#fdf6e8", borderRadius: "8px", padding: "1rem", border: "1px solid #f9e2b3" }}>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#c9932f", textTransform: "uppercase" }}>Model Answer Benchmark</span>
-                  <p style={{ fontSize: "0.85rem", color: "#5c482c", margin: "0.25rem 0 0 0", lineHeight: 1.4 }}>{evaluation.model_answer}</p>
+
+                <div style={{ background: "rgba(242, 166, 50, 0.02)", border: "1px solid rgba(242, 166, 50, 0.1)", borderRadius: "6px", padding: "0.85rem" }}>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Model Answer Benchmark</span>
+                  <p style={{ fontSize: "0.8rem", color: "#a1a1aa", marginTop: "0.35rem", lineHeight: 1.45 }}>{evaluation.model_answer}</p>
                 </div>
               </div>
             ) : (
-              /* Input Text Area Form */
-              <form onSubmit={handleSubmitResponse}>
-                <div className="int-textarea-container">
-                  <textarea
-                    className="int-textarea"
-                    placeholder="Type your answer or speak — your response will appear here"
-                    value={answerText}
-                    onChange={(e) => setAnswerText(e.target.value)}
-                    onCopy={(e) => e.preventDefault()}
-                    onCut={(e) => e.preventDefault()}
-                    onPaste={handlePreventCopyPaste}
-                    disabled={submitting}
-                  />
-
-                  {/* Speech mic button */}
-                  {speechSupported && (
-                    <button
-                      type="button"
-                      className={`int-floating-mic ${isListening ? "listening" : ""}`}
-                      onClick={toggleVoiceRecording}
-                      title={isListening ? "Stop listening" : "Start speaking"}
-                      disabled={submitting}
-                    >
-                      <Mic size={20} />
-                    </button>
+              /* Speech transcript and feedback chips visual layout */
+              <div className="int-transcript-body">
+                <div className="int-transcript-content">
+                  {transcriptText ? (
+                    <>
+                      {transcriptText}
+                      <span className="int-transcript-cursor"></span>
+                    </>
+                  ) : (
+                    <span style={{ color: "rgba(255,255,255,0.25)", fontStyle: "italic", fontSize: "0.85rem" }}>
+                      Awaiting speech or notes... Talk into your microphone or write code in the editor above.
+                    </span>
                   )}
                 </div>
-              </form>
-            )}
 
-            {/* Warning info if API Error */}
-            {error && (
-              <div style={{
-                color: "#ef4444",
-                fontSize: "0.82rem",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.35rem",
-                marginTop: "0.5rem"
-              }}>
-                <AlertCircle size={14} />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Bottom Actions Navigation */}
-            <div className="int-actions-row">
-              <button 
-                type="button" 
-                className="int-btn-prev" 
-                onClick={() => router.push("/dashboard")}
-              >
-                ← Previous
-              </button>
-
-              {evaluation ? (
-                isFinished ? (
-                  <button 
-                    type="button" 
-                    className="int-btn-submit" 
-                    onClick={handleEndInterview}
-                    disabled={submitting}
-                  >
-                    Finish Interview <ArrowRight size={16} />
-                  </button>
-                ) : (
-                  <button 
-                    type="button" 
-                    className="int-btn-submit" 
-                    onClick={handleNextQuestion}
-                  >
-                    Next Question <ArrowRight size={16} />
-                  </button>
-                )
-              ) : (
-                <button
-                  type="button"
-                  className="int-btn-submit"
-                  onClick={handleSubmitResponse}
-                  disabled={!answerText.trim() || submitting}
-                >
-                  {submitting ? "Analyzing..." : "Submit Answer"}
-                  <ArrowRight size={16} />
-                </button>
-              )}
-
-              <button 
-                type="button" 
-                className="int-btn-skip"
-                onClick={handleNextQuestion}
-                disabled={submitting}
-              >
-                Skip Question
-              </button>
-            </div>
-          </div>
-        </main>
-
-        {/* Right Proctoring Sidebar */}
-        <aside className="int-proctor-sidebar">
-          <h3 className="int-proctor-title">
-            <ShieldAlert size={18} color="#dea63b" />
-            <span>AI Proctoring Desk</span>
-          </h3>
-
-          {/* 1. Camera preview box */}
-          <div className="int-media-box">
-            <div className="int-media-label">
-              <span>Webcam Preview</span>
-              <span className={`int-media-indicator`} style={{ color: isCamActive ? "#10b981" : "#888" }}>
-                <span className={`int-indicator-dot ${isCamActive ? "active" : ""}`} />
-                {isCamActive ? "active" : "disabled"}
-              </span>
-            </div>
-            
-            <video id="webcam" autoPlay playsInline muted className="int-video-feed" />
-
-            <button 
-              type="button" 
-              className={`int-btn-media-control ${isCamActive ? "active" : ""}`}
-              onClick={toggleCamera}
-            >
-              <Video size={14} />
-              <span>{isCamActive ? "Stop Webcam" : "Enable Webcam"}</span>
-            </button>
-          </div>
-
-          {/* 2. Screen sharing preview box */}
-          <div className="int-media-box">
-            <div className="int-media-label">
-              <span>Screen Stream</span>
-              <span className={`int-media-indicator`} style={{ color: isSharingScreen ? "#10b981" : "#888" }}>
-                <span className={`int-indicator-dot ${isSharingScreen ? "active" : ""}`} />
-                {isSharingScreen ? "active" : "disabled"}
-              </span>
-            </div>
-
-            <video id="screenshare" autoPlay playsInline className="int-video-feed" style={{ display: isSharingScreen ? "block" : "none" }} />
-            {!isSharingScreen && (
-              <div style={{
-                height: "150px",
-                background: "#111",
-                borderRadius: "8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.75rem",
-                color: "#555",
-                fontWeight: 600,
-                border: "1px solid #eceae4"
-              }}>
-                Screen sharing not active
-              </div>
-            )}
-
-            <button 
-              type="button" 
-              className={`int-btn-media-control ${isSharingScreen ? "active" : ""}`}
-              onClick={toggleScreenShare}
-            >
-              <Monitor size={14} />
-              <span>{isSharingScreen ? "Stop Sharing" : "Share Screen"}</span>
-            </button>
-          </div>
-
-          {/* 3. Audio / Microphone monitor */}
-          <div className="int-media-box">
-            <div className="int-media-label">
-              <span>Microphone Tracker</span>
-              <span className={`int-media-indicator`} style={{ color: isMicActive ? "#10b981" : "#888" }}>
-                <span className={`int-indicator-dot ${isMicActive ? "active" : ""}`} />
-                {isMicActive ? "active" : "disabled"}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              <div className="int-audio-bar-bg">
-                <div className="int-audio-bar-fill" style={{ width: `${micLevel}%` }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#888", fontWeight: 600 }}>
-                <span>0dB (silence)</span>
-                <span>Speaking volume</span>
-              </div>
-            </div>
-
-            <button 
-              type="button" 
-              className={`int-btn-media-control ${isMicActive ? "active" : ""}`}
-              onClick={toggleMic}
-            >
-              <Mic size={14} />
-              <span>{isMicActive ? "Stop Microphone" : "Enable Microphone"}</span>
-            </button>
-          </div>
-
-          {/* 4. Proctor Constraints */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            <span className="msetup-section-label" style={{ marginBottom: "0.25rem", display: "block" }}>Proctor Compliance</span>
-            
-            <div className="int-proctor-log-item">
-              <span>Page Fullscreen</span>
-              {isFullscreenActive ? (
-                <span className="int-proctor-log-value success">Active</span>
-              ) : (
-                <button 
-                  type="button" 
-                  onClick={requestStrictFullscreen} 
-                  style={{
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                    color: "#ef4444",
-                    background: "#fee2e2",
-                    border: "1px solid #fca5a5",
-                    padding: "0.15rem 0.5rem",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
-                >
-                  Exited (Click to Enforce)
-                </button>
-              )}
-            </div>
-
-            <div className="int-proctor-log-item">
-              <span>Dual Monitors Blocker</span>
-              <span className="int-proctor-log-value success">Secured</span>
-            </div>
-
-            <div className="int-proctor-log-item">
-              <span>Copy / Paste Blocker</span>
-              <span className="int-proctor-log-value success">Enforced</span>
-            </div>
-
-            <div className="int-proctor-log-item">
-              <span>Screen Stream Compliance</span>
-              <span className={`int-proctor-log-value ${isSharingScreen ? "success" : "danger"}`} style={{ color: isSharingScreen ? "#10b981" : "#ef4444" }}>
-                {isSharingScreen ? "Secured" : "Inactive"}
-              </span>
-            </div>
-
-            <div className="int-proctor-log-item" style={{ borderBottom: "none" }}>
-              <span>Proctor Warnings</span>
-              <span className={`int-proctor-log-value ${violations > 0 ? "danger" : "success"}`} style={{ color: violations > 0 ? "#ef4444" : "#10b981", fontWeight: 700 }}>
-                {violations} / 5
-              </span>
-            </div>
-            
-            {/* Red visual warning indicator progress bar */}
-            {violations > 0 && (
-              <div style={{ width: "100%", height: "4px", background: "#fee2e2", borderRadius: "2px", overflow: "hidden", marginTop: "-0.25rem" }}>
-                <div style={{ width: `${(violations / 5) * 100}%`, height: "100%", background: "#ef4444", transition: "width 0.3s ease" }} />
-              </div>
-            )}
-
-            {/* Dynamic Real-time AI Proctor logs list */}
-            <span className="msetup-section-label" style={{ marginTop: "1rem", marginBottom: "0.25rem", display: "block" }}>Real-time Proctor Logs</span>
-            <div style={{
-              background: "#ffffff",
-              border: "1px solid #f0ede6",
-              borderRadius: "8px",
-              padding: "0.5rem",
-              minHeight: "80px",
-              maxHeight: "130px",
-              overflowY: "auto",
-              fontSize: "0.68rem",
-              fontFamily: "monospace",
-              color: "#555"
-            }}>
-              {proctorLogs.length === 0 ? (
-                <div style={{ color: "#aaa", padding: "0.5rem 0", textAlign: "center", fontStyle: "italic" }}>
-                  Awaiting compliance logs...
-                </div>
-              ) : (
-                proctorLogs.map((log, idx) => (
-                  <div key={idx} style={{
-                    padding: "0.25rem 0",
-                    borderBottom: "1px solid #f5f2eb",
-                    color: log.severity === "danger" ? "#ef4444" : log.severity === "warning" ? "#d97706" : "#4b5563"
-                  }}>
-                    [{log.time}] {log.message}
+                {/* Staggered dynamic feedback chips */}
+                {feedbackChips.length > 0 && (
+                  <div className="int-transcript-chips-col">
+                    {feedbackChips.map((chip) => (
+                      <div key={chip.id} className={`int-feedback-chip ${chip.type}`}>
+                        <span>{chip.label}</span>
+                        <span className="int-feedback-chip-val">{chip.value}</span>
+                      </div>
+                    ))}
                   </div>
-                ))
-              )}
+                )}
+              </div>
+            )}
+
+            {/* Transcript metrics footer */}
+            <div className="int-transcript-footer">
+              <div className="int-metric-item">
+                <span>Eye Contact</span>
+                <div className="int-metric-dots">
+                  <div className={`int-metric-dot ${eyeDots >= 1 ? 'eye-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${eyeDots >= 2 ? 'eye-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${eyeDots >= 3 ? 'eye-active' : ''}`}></div>
+                </div>
+              </div>
+              <div className="int-metric-item">
+                <span>Pacing</span>
+                <div className="int-metric-dots">
+                  <div className={`int-metric-dot ${pacingDots >= 1 ? 'pacing-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${pacingDots >= 2 ? 'pacing-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${pacingDots >= 3 ? 'pacing-active' : ''}`}></div>
+                </div>
+              </div>
+              <div className="int-metric-item">
+                <span>Filler Words</span>
+                <div className="int-metric-dots">
+                  <div className={`int-metric-dot ${fillerDots >= 1 ? 'filler-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${fillerDots >= 2 ? 'filler-active' : ''}`}></div>
+                  <div className={`int-metric-dot ${fillerDots >= 3 ? 'filler-active' : ''}`}></div>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
 
       </div>
+
+      {/* 4. Footer controls bar */}
+      <footer className="int-footer">
+        <div className="int-footer-left">
+          CURRENT TRACK: QUESTION {currentNum} OF {totalNum} &mdash; {roleTitle.toUpperCase()} TRACK
+        </div>
+
+        <div className="int-footer-center">
+          {/* Mute/Recording mic button */}
+          {speechSupported && !evaluation && (
+            <button
+              type="button"
+              className={`int-btn-footer-mic ${isListening ? 'recording' : ''}`}
+              onClick={toggleVoiceRecording}
+              title={isListening ? "Mute Microphone" : "Unmute Microphone (Record Speech)"}
+              disabled={submitting}
+            >
+              {isListening ? <Mic size={18} /> : <MicOff size={18} />}
+            </button>
+          )}
+
+          {/* Skip question */}
+          {!evaluation && (
+            <button
+              type="button"
+              className="int-btn-footer-skip"
+              onClick={handleSkipQuestion}
+              disabled={submitting}
+            >
+              Skip Question
+            </button>
+          )}
+
+          {/* Submit/Next question */}
+          {evaluation ? (
+            isFinished ? (
+              <button 
+                type="button" 
+                className="int-btn-footer-submit" 
+                onClick={handleEndInterview}
+                disabled={submitting}
+              >
+                Finish Session <ArrowRight size={14} />
+              </button>
+            ) : (
+              <button 
+                type="button" 
+                className="int-btn-footer-submit" 
+                onClick={handleNextQuestion}
+              >
+                Next Question <ArrowRight size={14} />
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              className="int-btn-footer-submit"
+              onClick={handleSubmitResponse}
+              disabled={!answerText.trim() || submitting}
+            >
+              {submitting ? "Analyzing..." : "Submit Answer"}
+              <ArrowRight size={14} />
+            </button>
+          )}
+        </div>
+
+        <div className="int-footer-right">
+          {/* Confidence widget */}
+          <div className="int-confidence-widget">
+            <span className="int-confidence-label">Confidence</span>
+            <div className="int-confidence-bars">
+              <div className="int-confidence-bar active" style={{ height: "6px" }}></div>
+              <div className="int-confidence-bar active" style={{ height: "9px" }}></div>
+              <div className="int-confidence-bar active" style={{ height: "12px" }}></div>
+              <div className="int-confidence-bar" style={{ height: "15px" }}></div>
+              <div className="int-confidence-bar" style={{ height: "18px" }}></div>
+            </div>
+          </div>
+
+          <button 
+            type="button" 
+            className="int-btn-footer-end" 
+            onClick={handleEndInterview}
+            disabled={submitting}
+          >
+            End Session
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -47,11 +47,7 @@ export default function Dashboard() {
   const [backendOffline, setBackendOffline] = useState(false);
 
   // Recommended plan items (checked state kept locally for micro-interaction)
-  const [recommendedPlan, setRecommendedPlan] = useState([
-    { id: "solve-dsa", text: "Solve 3 Array problems", difficulty: "Medium", type: "medium", checked: false, link: "/practice" },
-    { id: "watch-bs", text: "Watch Binary Search explanation", difficulty: "Easy", type: "easy", checked: false, link: "/practice" },
-    { id: "complete-mock", text: "Complete 1 mock question", difficulty: "Hard", type: "hard", checked: false, link: "/setup" }
-  ]);
+  const [recommendedPlan, setRecommendedPlan] = useState<Array<{ id: string; text: string; difficulty: string; type: string; checked: boolean; link: string }>>([]);
 
   // Streak state
   const [streakDays, setStreakDays] = useState(3);
@@ -74,6 +70,28 @@ export default function Dashboard() {
       } catch (e) {
         setSolvedProblems([]);
       }
+    }
+
+    const savedPlan = localStorage.getItem("prepora_recommended_plan");
+    if (savedPlan) {
+      try {
+        setRecommendedPlan(JSON.parse(savedPlan));
+      } catch (e) {
+        const defaultPlan = [
+          { id: "solve-dsa", text: "Solve 3 Array problems", difficulty: "Medium", type: "medium", checked: false, link: "/practice" },
+          { id: "watch-bs", text: "Watch Binary Search explanation", difficulty: "Easy", type: "easy", checked: false, link: "/practice" },
+          { id: "complete-mock", text: "Complete 1 mock question", difficulty: "Hard", type: "hard", checked: false, link: "/setup" }
+        ];
+        setRecommendedPlan(defaultPlan);
+      }
+    } else {
+      const defaultPlan = [
+        { id: "solve-dsa", text: "Solve 3 Array problems", difficulty: "Medium", type: "medium", checked: false, link: "/practice" },
+        { id: "watch-bs", text: "Watch Binary Search explanation", difficulty: "Easy", type: "easy", checked: false, link: "/practice" },
+        { id: "complete-mock", text: "Complete 1 mock question", difficulty: "Hard", type: "hard", checked: false, link: "/setup" }
+      ];
+      localStorage.setItem("prepora_recommended_plan", JSON.stringify(defaultPlan));
+      setRecommendedPlan(defaultPlan);
     }
   }, []);
 
@@ -208,6 +226,43 @@ export default function Dashboard() {
   const completedSessions = sessions.filter(s => s.status === "completed" && s.overall_score !== null);
   const latestCompleted = completedSessions[0]; // sorted descending in backend
 
+  // Extract upcoming scheduled session details for Mock Card
+  const scheduledSessions = sessions.filter(s => s.scheduled_time && s.status !== "completed");
+  const upcomingScheduled = scheduledSessions[0]; // the latest scheduled session
+
+  const formatScheduledTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).toUpperCase() + " AT 10:00 AM";
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getGoogleCalendarUrl = (sessionObj: any) => {
+    const title = encodeURIComponent(`Prepora Mock Interview (${sessionObj.role})`);
+    
+    let dateStr = "20260609T100000Z";
+    let endDateStr = "20260609T104500Z";
+    
+    if (sessionObj.scheduled_time) {
+      const cleanDate = sessionObj.scheduled_time.replace(/[^\d-]/g, ""); // "2026-06-09"
+      const parts = cleanDate.split("-");
+      if (parts.length === 3) {
+        const year = parts[0];
+        const month = parts[1].padStart(2, "0");
+        const day = parts[2].padStart(2, "0");
+        dateStr = `${year}${month}${day}T100000Z`;
+        endDateStr = `${year}${month}${day}T104500Z`;
+      }
+    }
+    
+    const details = encodeURIComponent(`Your upcoming mock interview session for ${sessionObj.role} (${sessionObj.level}) is scheduled on Prepora.\n\nLink to workspace: http://localhost:3000/interview/${sessionObj.id}`);
+    
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${endDateStr}&details=${details}`;
+  };
+
   const getGrade = (score: number) => {
     if (score >= 95) return "A+";
     if (score >= 90) return "A";
@@ -231,9 +286,11 @@ export default function Dashboard() {
 
   // Toggle recommended plan items
   const togglePlanItem = (id: string) => {
-    setRecommendedPlan(prev =>
-      prev.map(item => (item.id === id ? { ...item, checked: !item.checked } : item))
-    );
+    setRecommendedPlan(prev => {
+      const updated = prev.map(item => (item.id === id ? { ...item, checked: !item.checked } : item));
+      localStorage.setItem("prepora_recommended_plan", JSON.stringify(updated));
+      return updated;
+    });
   };
 
   return (
@@ -418,19 +475,78 @@ export default function Dashboard() {
 
               {/* Right Column Card: Mock Interviews */}
               <div className="dash-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "center" }}>
-                <div>
-                  <h2 className="dash-card-title" style={{ textAlign: "left" }}>MOCK INTERVIEWS</h2>
-                  <div className="dash-grade-circle">
-                    {latestGrade}
+                {upcomingScheduled ? (
+                  <div>
+                    <h2 className="dash-card-title" style={{ textAlign: "left" }}>MOCK INTERVIEWS</h2>
+                    
+                    <div style={{ margin: "1.25rem 0", display: "flex", flexDirection: "column", gap: "0.55rem", alignItems: "center" }}>
+                      <div style={{
+                        padding: "0.2rem 0.6rem",
+                        background: "rgba(229, 169, 60, 0.12)",
+                        color: "#dea63b",
+                        borderRadius: "4px",
+                        fontSize: "0.68rem",
+                        fontWeight: 800,
+                        fontFamily: "monospace",
+                        letterSpacing: "0.08em"
+                      }}>
+                        UPCOMING INTERVIEW
+                      </div>
+                      <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1c1917", margin: "0.2rem 0 0 0" }}>
+                        {upcomingScheduled.role} Track
+                      </h3>
+                      <p style={{ fontSize: "0.85rem", color: "#6b6661", margin: 0, fontWeight: 600 }}>
+                        {formatScheduledTime(upcomingScheduled.scheduled_time || "")}
+                      </p>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem", marginTop: "1rem" }}>
+                      <button 
+                        className="dash-btn-gold" 
+                        onClick={() => router.push(`/interview/${upcomingScheduled.id}`)}
+                        style={{ width: "100%" }}
+                      >
+                        Start Session
+                      </button>
+                      <a 
+                        href={getGoogleCalendarUrl(upcomingScheduled)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary"
+                        style={{ 
+                          width: "100%", 
+                          textDecoration: "none", 
+                          fontSize: "0.8rem", 
+                          padding: "0.6rem 0", 
+                          display: "inline-flex", 
+                          alignItems: "center", 
+                          justifyContent: "center", 
+                          gap: "0.35rem",
+                          border: "1px solid #dea63b",
+                          color: "#dea63b"
+                        }}
+                      >
+                        Add to Google Calendar 🗓️
+                      </a>
+                    </div>
                   </div>
-                  <div className="dash-mock-meta">
-                    <h3 className="dash-mock-title">{latestTitle}</h3>
-                    <p className="dash-mock-date">{latestDate}</p>
-                  </div>
-                </div>
-                <button className="dash-btn-gold" onClick={() => router.push("/setup")}>
-                  {buttonText}
-                </button>
+                ) : (
+                  <>
+                    <div>
+                      <h2 className="dash-card-title" style={{ textAlign: "left" }}>MOCK INTERVIEWS</h2>
+                      <div className="dash-grade-circle">
+                        {latestGrade}
+                      </div>
+                      <div className="dash-mock-meta">
+                        <h3 className="dash-mock-title">{latestTitle}</h3>
+                        <p className="dash-mock-date">{latestDate}</p>
+                      </div>
+                    </div>
+                    <button className="dash-btn-gold" onClick={() => router.push("/setup")}>
+                      {buttonText}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 

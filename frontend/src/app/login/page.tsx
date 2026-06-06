@@ -170,7 +170,7 @@ export default function Login() {
           <a href="#" className="auth-footer-link">Help Center</a>
           <a href="#" className="auth-footer-link">Contact Us</a>
         </nav>
-        <span className="auth-footer-copy">&copy; 2024 Prepora AI. All rights reserved.</span>
+        <span className="auth-footer-copy">&copy; 2026 Prepora AI. All rights reserved.</span>
       </footer>
     </div>
   );

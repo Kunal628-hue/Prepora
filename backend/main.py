@@ -44,6 +44,261 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def seed_company_tracks_data(db: Session):
+    # Check if we already have companies in the database
+    if db.query(models.Company).first() is not None:
+        logger.info("Company tracks data already seeded.")
+        return
+
+    logger.info("Seeding company tracks database...")
+
+    # Define the 6 companies
+    companies_data = [
+        {
+            "name": "Google",
+            "description": "Focus on complex data structures and distributed systems.",
+            "difficulty": "HARD",
+            "tags": ["SWE", "ML", "SRE"],
+            "problems_count": 142,
+            "mock_questions_count": 12,
+            "problems": [
+                {"name": "Median of Two Sorted Arrays", "difficulty": "HARD", "topic": "BINARY SEARCH"},
+                {"name": "Text Justification", "difficulty": "HARD", "topic": "STRING"},
+                {"name": "Longest Substring with At Most K Distinct Characters", "difficulty": "MEDIUM", "topic": "SLIDING WINDOW"},
+                {"name": "Word Ladder", "difficulty": "HARD", "topic": "BFS"},
+                {"name": "Two Sum", "difficulty": "EASY", "topic": "HASH TABLE"},
+                {"name": "Trapping Rain Water", "difficulty": "HARD", "topic": "TWO POINTERS"},
+                {"name": "3Sum", "difficulty": "MEDIUM", "topic": "TWO POINTERS"}
+            ],
+            "tips": [
+                {"title": "Optimize beyond brute force", "content": "Google expects you to provide the most efficient solution possible. While a brute-force approach is a good starting point to show you understand the problem, quickly pivot to analyzing Big O complexity and finding ways to optimize time and space.", "order": 1},
+                {"title": "Clarify constraints early", "content": "Before you write a single line of code, ask about the input size, types, and edge cases (e.g., 'Can the array be empty?', 'Are there negative numbers?'). This demonstrates rigorous thinking and prevents rework.", "order": 2},
+                {"title": "Think out loud while coding", "content": "The interviewer cares about your thought process as much as your code. Vocalize your logic, explain why you're choosing a specific data structure, and narrate your debugging steps as you go.", "order": 3},
+                {"title": "Test your solution manually", "content": "Dry run your code with a small example input. Step through the logic line-by-line to catch off-by-one errors or logical gaps before the interviewer points them out.", "order": 4}
+            ],
+            "user_tips": [
+                {"content": "Focus heavily on Graphs and Trees. My entire onsite was tree traversal and BFS/DFS variations.", "author": "@alex_dev", "time_ago": "2 days ago", "likes": 12},
+                {"content": "Don't ignore the behavioral questions. They really do care about how you resolve conflict within a team.", "author": "@sarah_codes", "time_ago": "5 days ago", "likes": 8},
+                {"content": "Mentioned scalability once and the interviewer's face lit up. Definitely think about systems even in LeetCode style questions.", "author": "@josh_tech", "time_ago": "1 week ago", "likes": 24}
+            ]
+        },
+        {
+            "name": "Amazon",
+            "description": "Emphasis on Leadership Principles and scalable architecture.",
+            "difficulty": "MEDIUM",
+            "tags": ["SWE", "PM", "CLOUD"],
+            "problems_count": 98,
+            "mock_questions_count": 24,
+            "problems": [
+                {"name": "LRU Cache", "difficulty": "HARD", "topic": "DESIGN"},
+                {"name": "Two Sum", "difficulty": "EASY", "topic": "HASH TABLE"},
+                {"name": "Merge Intervals", "difficulty": "MEDIUM", "topic": "SORTING"},
+                {"name": "Course Schedule", "difficulty": "MEDIUM", "topic": "GRAPH"},
+                {"name": "Best Time to Buy and Sell Stock", "difficulty": "EASY", "topic": "ARRAY"}
+            ],
+            "tips": [
+                {"title": "Study the Leadership Principles", "content": "Amazon aligns all evaluation with the 16 Leadership Principles (LPs). Integrate Customer Obsession and Bias for Action into your design answers.", "order": 1},
+                {"title": "STAR behavioral framework", "content": "Structure your answers using Situation, Task, Action, Result. Quantify your achievements (e.g. 'reduced latency by 30%').", "order": 2}
+            ],
+            "user_tips": [
+                {"content": "Make sure you have 2 stories for each Leadership Principle. They will grill you deep.", "author": "@LP_master", "time_ago": "3 days ago", "likes": 15},
+                {"content": "The system design portion was heavily focused on scaling their retail services.", "author": "@cloud_architect", "time_ago": "1 week ago", "likes": 19}
+            ]
+        },
+        {
+            "name": "Meta",
+            "description": "Optimizing for speed and efficiency in algorithmic thinking.",
+            "difficulty": "HARD",
+            "tags": ["SWE", "FRONTEND", "MOBILE"],
+            "problems_count": 115,
+            "mock_questions_count": 18,
+            "problems": [
+                {"name": "3Sum", "difficulty": "MEDIUM", "topic": "TWO POINTERS"},
+                {"name": "Subarray Sum Equals K", "difficulty": "MEDIUM", "topic": "HASH TABLE"},
+                {"name": "Valid Palindrome", "difficulty": "EASY", "topic": "TWO POINTERS"},
+                {"name": "Longest Substring Without Repeating Characters", "difficulty": "MEDIUM", "topic": "SLIDING WINDOW"}
+            ],
+            "tips": [
+                {"title": "Solve 2 medium problems in 45 mins", "content": "Meta's screening is fast-paced. You are expected to code quickly and run through complexity calculations on the fly.", "order": 1},
+                {"title": "Facebook-specific products", "content": "Be ready to talk about architecture design for News Feed, Instagram Stories, or WhatsApp Messaging systems.", "order": 2}
+            ],
+            "user_tips": [
+                {"content": "Practice directly from the Meta top-50 tagged LeetCode list. I got verbatim two problems from it.", "author": "@meta_swe", "time_ago": "4 days ago", "likes": 42},
+                {"content": "Explain space complexity clearly; they really care about runtime efficiency.", "author": "@fb_coder", "time_ago": "6 days ago", "likes": 11}
+            ]
+        },
+        {
+            "name": "Microsoft",
+            "description": "Broad focus on OOP design and fundamental data structures.",
+            "difficulty": "MEDIUM",
+            "tags": ["SWE", "FULLSTACK", "PM"],
+            "problems_count": 86,
+            "mock_questions_count": 15,
+            "problems": [
+                {"name": "Reverse Linked List", "difficulty": "EASY", "topic": "LINKED LIST"},
+                {"name": "Binary Tree Level Order Traversal", "difficulty": "MEDIUM", "topic": "TREE"},
+                {"name": "Valid Parentheses", "difficulty": "EASY", "topic": "STACK"}
+            ],
+            "tips": [
+                {"title": "Master OOP & Design Patterns", "content": "Microsoft values modular, maintainable, and clean code. Be ready to explain SOLID design principles.", "order": 1},
+                {"title": "Explain trade-offs clearly", "content": "Always compare multiple solutions (e.g. Iterative vs Recursive) before writing code.", "order": 2}
+            ],
+            "user_tips": [
+                {"content": "Got a lot of questions about Windows OS internals and pointers during my systems interview.", "author": "@c_sharp_guy", "time_ago": "1 day ago", "likes": 5},
+                {"content": "Collaborative culture, they want to see how you receive hints and suggestions.", "author": "@ms_dev", "time_ago": "10 days ago", "likes": 9}
+            ]
+        },
+        {
+            "name": "Apple",
+            "description": "Deep dive into low-level systems and performance optimization.",
+            "difficulty": "HARD",
+            "tags": ["FIRMWARE", "SWE", "IOS"],
+            "problems_count": 74,
+            "mock_questions_count": 10,
+            "problems": [
+                {"name": "Rotate Image", "difficulty": "MEDIUM", "topic": "MATRIX"},
+                {"name": "Copy List with Random Pointer", "difficulty": "MEDIUM", "topic": "LINKED LIST"},
+                {"name": "Invert Binary Tree", "difficulty": "EASY", "topic": "TREE"}
+            ],
+            "tips": [
+                {"title": "Low-level optimization", "content": "Apple questions often involve raw memory access, pointer arithmetic, or GPU/hardware interface constraints.", "order": 1},
+                {"title": "Attention to detail", "content": "Pixel-perfect correctness on frontend/iOS or edge-case safety on systems is heavily tested.", "order": 2}
+            ],
+            "user_tips": [
+                {"content": "Brush up on C/C++ memory management, alignment, and caches.", "author": "@ios_dev_apple", "time_ago": "3 days ago", "likes": 21},
+                {"content": "Apple values secrecy and product focus. Mention user experience in design.", "author": "@steve_fan", "time_ago": "2 weeks ago", "likes": 13}
+            ]
+        },
+        {
+            "name": "Netflix",
+            "description": "Specialized tracks for high-concurrency systems and culture fit.",
+            "difficulty": "HARD",
+            "tags": ["SYSTEMS", "ML", "SWE"],
+            "problems_count": 62,
+            "mock_questions_count": 14,
+            "problems": [
+                {"name": "Number of Islands", "difficulty": "MEDIUM", "topic": "GRAPH"},
+                {"name": "Course Schedule II", "difficulty": "MEDIUM", "topic": "GRAPH"},
+                {"name": "Climbing Stairs", "difficulty": "EASY", "topic": "DYNAMIC PROGRAMMING"}
+            ],
+            "tips": [
+                {"title": "High throughput systems", "content": "Netflix focuses on real-time stream caching, CDN distribution, and fallback resilience under load.", "order": 1},
+                {"title": "Netflix Keeper Test Culture", "content": "Make sure you read their culture deck thoroughly. Freedom and Responsibility is key.", "order": 2}
+            ],
+            "user_tips": [
+                {"content": "System design round asked to architecture a distributed video streaming CDN.", "author": "@concurrency_wizard", "time_ago": "2 days ago", "likes": 31},
+                {"content": "Be direct and self-motivated in your behavioral answers. They pay top of market but expect autonomy.", "author": "@netflix_eng", "time_ago": "1 week ago", "likes": 18}
+            ]
+        }
+    ]
+
+    for comp in companies_data:
+        db_comp = models.Company(
+            name=comp["name"],
+            description=comp["description"],
+            difficulty=comp["difficulty"],
+            tags=comp["tags"],
+            problems_count=comp["problems_count"],
+            mock_questions_count=comp["mock_questions_count"]
+        )
+        db.add(db_comp)
+        db.flush() # get the company ID
+
+        # Add problems
+        for p in comp["problems"]:
+            db_p = models.TrackProblem(
+                company_id=db_comp.id,
+                name=p["name"],
+                difficulty=p["difficulty"],
+                topic=p["topic"]
+            )
+            db.add(db_p)
+
+        # Add tips
+        for t in comp["tips"]:
+            db_t = models.CompanyTip(
+                company_id=db_comp.id,
+                title=t["title"],
+                content=t["content"],
+                order=t["order"]
+            )
+            db.add(db_t)
+
+        # Add user tips
+        for ut in comp["user_tips"]:
+            db_ut = models.UserFeedbackTip(
+                company_id=db_comp.id,
+                content=ut["content"],
+                author=ut["author"],
+                time_ago=ut["time_ago"],
+                likes=ut["likes"]
+            )
+            db.add(db_ut)
+
+    db.commit()
+    logger.info("Successfully seeded company tracks data.")
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("Running startup task: Seeding database tables...")
+    from backend.database import SessionLocal
+    db = SessionLocal()
+    try:
+        seed_company_tracks_data(db)
+    except Exception as e:
+        logger.error(f"Seeding database failed: {e}")
+    finally:
+        db.close()
+
+@app.get("/api/companies", response_model=List[schemas.CompanyResponse])
+def get_companies(db: Session = Depends(get_db)):
+    """Fetch all company tracks from database."""
+    companies = db.query(models.Company).all()
+    return companies
+
+@app.get("/api/companies/{company_name}", response_model=schemas.CompanyResponse)
+def get_company_detail(company_name: str, db: Session = Depends(get_db)):
+    """Fetch detail page data for a specific company track (case-insensitive)."""
+    company = db.query(models.Company).filter(models.Company.name.ilike(company_name)).first()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company track for '{company_name}' not found.")
+    return company
+
+@app.post("/api/companies/{company_id}/tips", response_model=schemas.UserFeedbackTipResponse)
+def create_company_user_tip(company_id: str, payload: schemas.UserFeedbackTipCreate, db: Session = Depends(get_db)):
+    """Add a new community feedback tip for a company."""
+    company = db.query(models.Company).filter(models.Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company track not found.")
+    
+    db_tip = models.UserFeedbackTip(
+        company_id=company_id,
+        content=payload.content,
+        author=payload.author or "@user",
+        time_ago=payload.time_ago or "Just now",
+        likes=0
+    )
+    db.add(db_tip)
+    db.commit()
+    db.refresh(db_tip)
+    return db_tip
+
+@app.post("/api/companies/{company_id}/tips/{tip_id}/like", response_model=schemas.UserFeedbackTipResponse)
+def like_company_user_tip(company_id: str, tip_id: str, db: Session = Depends(get_db)):
+    """Increment the likes counter for a community feedback tip."""
+    tip = db.query(models.UserFeedbackTip).filter(
+        models.UserFeedbackTip.id == tip_id,
+        models.UserFeedbackTip.company_id == company_id
+    ).first()
+    
+    if not tip:
+        raise HTTPException(status_code=404, detail="Feedback tip not found.")
+    
+    tip.likes += 1
+    db.commit()
+    db.refresh(tip)
+    return tip
+
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "provider": settings.LLM_PROVIDER}
@@ -172,15 +427,20 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
     if current_q.user_answer is not None:
          raise HTTPException(status_code=400, detail="Current question has already been answered")
 
-    logger.info(f"Evaluating response for Question {current_q.question_order} in session {session_id}")
-
-    # 1. Evaluate the user's answer
-    evaluation = await llm.evaluate_answer(
-        question=current_q.question_text,
-        answer=payload.answer,
-        role=db_session.role,
-        level=db_session.level
-    )
+    # 1. Evaluate the user's answer (bypass LLM call if question was skipped)
+    if payload.answer == "[Question skipped by candidate]":
+        evaluation = {
+            "critique": "Question skipped by candidate.",
+            "score": 0,
+            "model_answer": "No benchmark answer generated for skipped questions."
+        }
+    else:
+        evaluation = await llm.evaluate_answer(
+            question=current_q.question_text,
+            answer=payload.answer,
+            role=db_session.role,
+            level=db_session.level
+        )
     
     # 2. Update the current question in DB with feedback
     from datetime import datetime
