@@ -8,8 +8,6 @@ import {
   ArrowRight,
   ChevronDown,
   ChevronUp,
-  Bell,
-  Settings,
   Share2,
   RotateCcw,
   Sparkles,
@@ -18,6 +16,7 @@ import {
   AlertTriangle,
   Check
 } from "lucide-react";
+import DashboardHeader from "@/components/DashboardHeader";
 
 interface Question {
   id: string;
@@ -414,39 +413,7 @@ export default function InterviewReport({ params }: { params: Promise<{ id: stri
     <div style={{ background: "#f8f6f1", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "var(--font-sans)", color: "#1c1917" }}>
       
       {/* Header Bar */}
-      <header className="dash-header" style={{ position: "sticky", top: 0, zIndex: 100, background: "#ffffff", borderBottom: "1px solid #e8e5de" }}>
-        <Link href="/dashboard" className="dash-logo-wrap" style={{ textDecoration: "none" }}>
-          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="6" fill="#dea63b" fillOpacity="0.12" />
-            <rect x="6" y="6" width="20" height="20" rx="3" fill="#dea63b" fillOpacity="0.25" />
-            <rect x="10" y="10" width="12" height="12" rx="2" fill="#dea63b" />
-          </svg>
-          <span className="dash-logo-text" style={{ fontSize: "1.2rem", fontWeight: 800 }}>Prepora</span>
-        </Link>
-
-        <nav className="dash-nav">
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/dashboard")}>Home</span>
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/practice")}>Practice</span>
-          <span className="dash-nav-link active" style={{ cursor: "pointer" }} onClick={() => router.push("/setup")}>Mock Interview</span>
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/progress")}>Progress</span>
-        </nav>
-
-        <div className="dash-header-actions">
-          <button className="dash-icon-btn" aria-label="Notifications" style={{ background: "none", border: "none", cursor: "pointer" }}>
-            <Bell size={18} />
-          </button>
-          <button className="dash-icon-btn" aria-label="Settings" style={{ background: "none", border: "none", cursor: "pointer" }} onClick={() => router.push("/setup")}>
-            <Settings size={18} />
-          </button>
-          <div className="dash-avatar" style={{ cursor: "pointer" }} onClick={() => {
-            localStorage.removeItem("prepora_user_id");
-            localStorage.removeItem("prepora_user_name");
-            router.push("/");
-          }} title="Sign Out">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-        </div>
-      </header>
+      <DashboardHeader activeTab="mock" style={{ position: "sticky", top: 0, zIndex: 100, background: "#ffffff", borderBottom: "1px solid #e8e5de" }} />
 
       {/* Main Content Area */}
       <main style={{ maxWidth: "900px", margin: "2.5rem auto", padding: "0 1.5rem", flex: 1, width: "100%", display: "flex", flexDirection: "column", gap: "2rem" }}>

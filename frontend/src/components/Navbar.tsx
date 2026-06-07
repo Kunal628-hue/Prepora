@@ -32,9 +32,24 @@ export default function Navbar() {
   return (
     <header className="navbar">
       <Link href="/">
-        <div className="logo" style={{ cursor: "pointer" }}>
-          <span className="logo-icon" />
-          <span>PREPORA</span>
+        <div className="logo" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="navLogoGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#dea63b" />
+                <stop offset="100%" stopColor="#eab308" />
+              </linearGradient>
+              <linearGradient id="navGlowGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#dea63b" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#eab308" stopOpacity="0.05" />
+              </linearGradient>
+            </defs>
+            <path d="M16 2 L28 9 L28 23 L16 30 L4 23 L4 9 Z" fill="url(#navGlowGrad)" stroke="rgba(222, 166, 59, 0.2)" strokeWidth="1.5" strokeLinejoin="round" />
+            <rect x="10" y="8" width="4" height="16" rx="2" fill="url(#navLogoGrad)" />
+            <path d="M14 8 H19 C22.3 8 25 10.7 25 14 C25 17.3 22.3 20 19 20 H14" stroke="url(#navLogoGrad)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M15 11 L18 14 L15 17" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span style={{ fontSize: "1.1rem", fontWeight: 800, letterSpacing: "0.05em", color: "#ffffff" }}>PREPORA</span>
         </div>
       </Link>
       

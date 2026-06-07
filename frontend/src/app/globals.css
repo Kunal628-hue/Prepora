@@ -4765,7 +4765,312 @@ h1, h2, h3, h4, h5, h6 {
   object-fit: cover;
 }
 
+/* ========================================
+   ADVANCED MOCK INTERVIEW SCHEDULING & PARAMS
+   ======================================== */
 
+/* Segmented control for timing type */
+.msetup-timing-toggle {
+  display: flex;
+  background: #f0ede6;
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 1.5rem;
+}
 
+.msetup-timing-btn {
+  flex: 1;
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
 
+.msetup-timing-btn.selected {
+  background: #ffffff;
+  color: #1a1a1a;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
 
+/* Date and Time slots picker styling */
+.msetup-datetime-container {
+  display: grid;
+  grid-template-columns: 1.2fr 1.8fr;
+  gap: 1.25rem;
+  background: #faf9f6;
+  border: 1px solid #e8e5de;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.msetup-date-picker-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.msetup-date-input {
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 6px;
+  border: 1px solid #e8e5de;
+  background: #ffffff;
+  font-size: 0.88rem;
+  color: #1a1a1a;
+}
+
+.msetup-time-picker-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.msetup-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.msetup-time-btn {
+  padding: 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #e8e5de;
+  background: #ffffff;
+  color: #555;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.msetup-time-btn:hover {
+  border-color: #d4c49a;
+  background: #fafaf8;
+}
+
+.msetup-time-btn.selected {
+  border-color: #dea63b;
+  background: #fdf6e8;
+  color: #dea63b;
+  box-shadow: 0 0 0 1px #dea63b;
+}
+
+/* Accordion panel for expert settings */
+.msetup-accordion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px dashed #e8e5de;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.msetup-accordion-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #666;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.msetup-accordion-content {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out;
+}
+
+.msetup-accordion-content.open {
+  max-height: 500px;
+  transition: max-height 0.3s ease-in;
+}
+
+.msetup-select-wrap {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.msetup-select {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e8e5de;
+  background: #ffffff;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  outline: none;
+}
+
+/* Scheduling confirmation modal */
+.msetup-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.msetup-confirm-card {
+  background: #ffffff;
+  border: 1px solid #e8e5de;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+  padding: 2.5rem;
+  width: 90%;
+  max-width: 460px;
+  text-align: center;
+  animation: slideUp 0.3s ease-out;
+}
+
+.msetup-confirm-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #fdf6e8;
+  color: #dea63b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+}
+
+.msetup-confirm-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 0.5rem;
+}
+
+.msetup-confirm-desc {
+  font-size: 0.88rem;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.msetup-confirm-details {
+  background: #faf9f6;
+  border: 1px solid #e8e5de;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.75rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.msetup-confirm-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+}
+
+.msetup-confirm-label {
+  color: #888;
+  font-weight: 600;
+}
+
+.msetup-confirm-value {
+  color: #1a1a1a;
+  font-weight: 700;
+}
+
+.msetup-confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.msetup-confirm-btn-primary {
+  width: 100%;
+  padding: 0.75rem;
+  background: #dea63b;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.msetup-confirm-btn-primary:hover {
+  background: #c9932f;
+}
+
+.msetup-confirm-btn-secondary {
+  width: 100%;
+  padding: 0.72rem;
+  background: #ffffff;
+  border: 1px solid #dea63b;
+  color: #dea63b;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.msetup-confirm-btn-secondary:hover {
+  background: #fdf6e8;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Dark theme overrides for dashboard elements on dark pages */
+html:not(.light-theme) .dash-header {
+  background: #0c0c0c !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html:not(.light-theme) .dash-nav-link {
+  color: #888 !important;
+}
+
+html:not(.light-theme) .dash-nav-link.active {
+  color: #dea63b !important;
+}
+
+html:not(.light-theme) .dash-logo-text {
+  color: #dea63b !important;
+}
+
+html:not(.light-theme) .dash-avatar {
+  background: rgba(222, 166, 59, 0.15) !important;
+  color: #dea63b !important;
+  border: 1px solid rgba(222, 166, 59, 0.3) !important;
+}
+
+html:not(.light-theme) .dash-icon-btn {
+  color: #888 !important;
+}
+
+html:not(.light-theme) .dash-icon-btn:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+  color: #dea63b !important;
+}

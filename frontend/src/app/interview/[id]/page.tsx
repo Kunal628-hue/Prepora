@@ -75,6 +75,8 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const audioBarRef = useRef<HTMLDivElement | null>(null);
   const micLevelRef = useRef(0);
+  const soundwaveBarsRef = useRef<NodeListOf<Element> | null>(null);
+  const confidenceBarsRef = useRef<NodeListOf<Element> | null>(null);
 
   // Proctoring/Cheating prevention state
   const [violations, setViolations] = useState(0);
@@ -98,6 +100,29 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [initializingFeeds, setInitializingFeeds] = useState(false);
 
+  // Copilot and Companion states
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotHint, setCopilotHint] = useState<string | null>(null);
+  
+  const [companionOpen, setCompanionOpen] = useState(false);
+  const [companionMessages, setCompanionMessages] = useState<Array<{ role: string; content: string }>>([
+    { role: "assistant", content: "Hey! I'm your AI Interview Companion. Need a concept explained, syntax clarified, or just some encouragement? Ask away!" }
+  ]);
+  const [companionInput, setCompanionInput] = useState("");
+  const [companionLoading, setCompanionLoading] = useState(false);
+
+  const isCamActiveRef = useRef(isCamActive);
+  const isMicActiveRef = useRef(isMicActive);
+  const isAiSpeakingRef = useRef(isAiSpeaking);
+  const isListeningRef = useRef(isListening);
+  const cheatingLockedRef = useRef(cheatingLocked);
+
+  useEffect(() => { isCamActiveRef.current = isCamActive; }, [isCamActive]);
+  useEffect(() => { isMicActiveRef.current = isMicActive; }, [isMicActive]);
+  useEffect(() => { isAiSpeakingRef.current = isAiSpeaking; }, [isAiSpeaking]);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+  useEffect(() => { cheatingLockedRef.current = cheatingLocked; }, [cheatingLocked]);
+
   interface FeedbackChip {
     id: string;
     type: "complexity" | "filler" | "incorrect";
@@ -114,53 +139,57 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     }
   }, [answerText, isListening]);
 
-  // Analyze transcript text for dynamic micro-feedback chips
+  // Analyze transcript text for dynamic micro-feedback chips (Debounced to prevent keypress lag)
   useEffect(() => {
-    const text = (transcriptText || "").toLowerCase();
-    const newChips: FeedbackChip[] = [];
+    const handler = setTimeout(() => {
+      const text = (transcriptText || "").toLowerCase();
+      const newChips: FeedbackChip[] = [];
 
-    if (text.includes("redis") || text.includes("cache") || text.includes("central storage")) {
-      newChips.push({
-        id: "redis",
-        type: "complexity",
-        label: "Good Complexity Mention",
-        value: "Redis central storage"
-      });
-    }
-    if (text.includes("token bucket") || text.includes("rate limit") || text.includes("sliding window")) {
-      newChips.push({
-        id: "algorithm",
-        type: "complexity",
-        label: "Good Complexity Mention",
-        value: "Token bucket algorithm"
-      });
-    }
-    if (text.includes("postgres") || text.includes("database") || text.includes("nosql")) {
-      newChips.push({
-        id: "db",
-        type: "complexity",
-        label: "Good Complexity Mention",
-        value: "Database persistence"
-      });
-    }
-    if (text.includes("basically") || text.includes(" um ") || text.includes(" like ") || text.includes(" actually ")) {
-      newChips.push({
-        id: "filler-word",
-        type: "filler",
-        label: "Filler Word Detected",
-        value: "Filler: basically / like"
-      });
-    }
-    if (text.includes("stateless") || text.includes("spof") || text.includes("single server")) {
-      newChips.push({
-        id: "assumption",
-        type: "incorrect",
-        label: "Incorrect Assumption",
-        value: "Assumption: single server bottleneck"
-      });
-    }
+      if (text.includes("redis") || text.includes("cache") || text.includes("central storage")) {
+        newChips.push({
+          id: "redis",
+          type: "complexity",
+          label: "Good Complexity Mention",
+          value: "Redis central storage"
+        });
+      }
+      if (text.includes("token bucket") || text.includes("rate limit") || text.includes("sliding window")) {
+        newChips.push({
+          id: "algorithm",
+          type: "complexity",
+          label: "Good Complexity Mention",
+          value: "Token bucket algorithm"
+        });
+      }
+      if (text.includes("postgres") || text.includes("database") || text.includes("nosql")) {
+        newChips.push({
+          id: "db",
+          type: "complexity",
+          label: "Good Complexity Mention",
+          value: "Database persistence"
+        });
+      }
+      if (text.includes("basically") || text.includes(" um ") || text.includes(" like ") || text.includes(" actually ")) {
+        newChips.push({
+          id: "filler-word",
+          type: "filler",
+          label: "Filler Word Detected",
+          value: "Filler: basically / like"
+        });
+      }
+      if (text.includes("stateless") || text.includes("spof") || text.includes("single server")) {
+        newChips.push({
+          id: "assumption",
+          type: "incorrect",
+          label: "Incorrect Assumption",
+          value: "Assumption: single server bottleneck"
+        });
+      }
 
-    setFeedbackChips(newChips);
+      setFeedbackChips(newChips);
+    }, 350);
+
+    return () => clearTimeout(handler);
   }, [transcriptText]);
 
   const recognitionRef = useRef<any>(null);
@@ -431,7 +460,10 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
           }
 
           // Direct DOM manipulation for high-performance soundwave rendering
-          const soundwaveBars = document.querySelectorAll(".int-soundwave-bar");
+          if (!soundwaveBarsRef.current) {
+            soundwaveBarsRef.current = document.querySelectorAll(".int-soundwave-bar");
+          }
+          const soundwaveBars = soundwaveBarsRef.current;
           soundwaveBars.forEach((bar: any) => {
             const factor = 0.5 + Math.random() * 1.5;
             const barHeight = Math.max(8, Math.min(48, Math.round((val / 100) * 40 * factor)));
@@ -439,7 +471,10 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
           });
 
           // Direct DOM manipulation for confidence indicator bars
-          const confidenceBars = document.querySelectorAll(".int-confidence-bar");
+          if (!confidenceBarsRef.current) {
+            confidenceBarsRef.current = document.querySelectorAll(".int-confidence-bar");
+          }
+          const confidenceBars = confidenceBarsRef.current;
           const activeCount = val > 0 ? Math.max(1, Math.min(5, Math.ceil(val / 20))) : 3;
           confidenceBars.forEach((bar: any, idx) => {
             if (idx < activeCount) {
@@ -622,13 +657,13 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
   // 6. Active Proctor Feed Heuristics (Webcam Gaze / Audio Whisper check)
   useEffect(() => {
-    if (cheatingLocked) return;
-
     let micHighCount = 0;
 
     const interval = setInterval(() => {
+      if (cheatingLockedRef.current) return;
+
       // A. Microphone whisper/talking check
-      if (isMicActive && micLevelRef.current > 45 && !isAiSpeaking && !isListening) {
+      if (isMicActiveRef.current && micLevelRef.current > 45 && !isAiSpeakingRef.current && !isListeningRef.current) {
         micHighCount += 1;
         if (micHighCount >= 3) {
           addViolation("Microphone Whisper / Help", "Sustained secondary audio or whisper patterns detected in room.");
@@ -639,7 +674,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
       }
 
       // B. Webcam look-away / obstruction check
-      if (isCamActive) {
+      if (isCamActiveRef.current) {
         const videoElement = document.getElementById("webcam") as HTMLVideoElement;
         if (videoElement && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
           try {
@@ -680,7 +715,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [isCamActive, isMicActive, isAiSpeaking, isListening, cheatingLocked]);
+  }, []);
 
   // Fetch Interview State
   const fetchSessionData = async () => {
@@ -877,7 +912,74 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setEvaluation(null);
     setAnswerText("");
     setShowHint(false);
+    setCopilotHint(null);
     fetchSessionData();
+  };
+
+  const handleGetCopilotHint = async (type: "code" | "complexity" | "edge_cases") => {
+    setCopilotLoading(true);
+    setCopilotHint(null);
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/ai/copilot-hint", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question_text: currentQuestion?.question_text || "",
+          answer_draft: answerText,
+          hint_type: type
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCopilotHint(data.hint);
+      } else {
+        setCopilotHint("Failed to retrieve hint from AI Copilot.");
+      }
+    } catch (err) {
+      console.error("Copilot error:", err);
+      setCopilotHint("Connection failed. Ensure the backend is online.");
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
+  const handleSendCompanionMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!companionInput.trim() || companionLoading) return;
+    const userMsg = companionInput.trim();
+    setCompanionInput("");
+    
+    const updatedMsgs = [...companionMessages, { role: "user", content: userMsg }];
+    setCompanionMessages(updatedMsgs);
+    setCompanionLoading(true);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/ai/companion-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question_text: currentQuestion?.question_text || "",
+          answer_draft: answerText,
+          history: updatedMsgs,
+          message: userMsg
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCompanionMessages([...updatedMsgs, { role: "assistant", content: data.response }]);
+      } else {
+        setCompanionMessages([...updatedMsgs, { role: "assistant", content: "Sorry, I encountered an issue connecting to my logic center." }]);
+      }
+    } catch (err) {
+      console.error("Companion chat error:", err);
+      setCompanionMessages([...updatedMsgs, { role: "assistant", content: "Sorry, I can't connect to the backend server right now." }]);
+    } finally {
+      setCompanionLoading(false);
+    }
   };
 
   const handleSkipQuestion = async () => {
@@ -1212,41 +1314,74 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
             <span className="int-q-number">CURRENT PROMPT</span>
             <h2 className="int-q-text">Q{currentNum}: {currentQuestion?.question_text}</h2>
             
-            {/* Show Hint Toggle */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button 
-                type="button" 
-                className="int-btn-hint" 
-                onClick={() => setShowHint(!showHint)}
-              >
-                <span>💡 {showHint ? "Hide Hint" : "Show Hint"}</span>
-                {showHint ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              </button>
-              
-              <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "rgba(255,255,255,0.4)", letterSpacing: "0.05em", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-                HINTS: 
-                {showHint ? (
-                  <>
-                    <Unlock size={11} style={{ color: "var(--primary)" }} />
-                    <Unlock size={11} style={{ color: "var(--primary)" }} />
-                    <Unlock size={11} style={{ color: "var(--primary)" }} />
-                  </>
-                ) : (
-                  <>
-                    <Lock size={11} style={{ color: "var(--muted)" }} />
-                    <Lock size={11} style={{ color: "var(--muted)" }} />
-                    <Lock size={11} style={{ color: "var(--muted)" }} />
-                  </>
-                )}
-              </span>
-            </div>
-
-            {/* Hint Box */}
-            {showHint && (
-              <div className="int-hint-box">
-                To solve this, review boundary cases, divide-and-conquer principles, and focus on optimal time complexity. If needed, ask the AI Companion by talking into your microphone.
+            {/* Interactive AI Coding Copilot Panel */}
+            <div style={{ marginTop: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button 
+                  type="button" 
+                  className="int-btn-hint" 
+                  onClick={() => setShowHint(!showHint)}
+                  style={{ gap: "0.4rem" }}
+                >
+                  <Sparkles size={14} />
+                  <span>{showHint ? "Hide AI Copilot" : "Consult AI Copilot"}</span>
+                  {showHint ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
               </div>
-            )}
+
+              {showHint && (
+                <div className="int-hint-box" style={{ marginTop: "0.75rem", padding: "1rem" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                    {[
+                      { type: "code" as const, label: "Code Structure" },
+                      { type: "complexity" as const, label: "Complexity Bottleneck" },
+                      { type: "edge_cases" as const, label: "Edge Cases to Check" }
+                    ].map((btn) => (
+                      <button
+                        key={btn.type}
+                        type="button"
+                        onClick={() => handleGetCopilotHint(btn.type)}
+                        disabled={copilotLoading}
+                        style={{
+                          padding: "0.4rem 0.75rem",
+                          borderRadius: "6px",
+                          border: "1px solid rgba(242, 166, 50, 0.25)",
+                          background: "rgba(242, 166, 50, 0.04)",
+                          color: "#fff",
+                          fontSize: "0.74rem",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.background = "rgba(242, 166, 50, 0.08)"}
+                        onMouseOut={(e) => e.currentTarget.style.background = "rgba(242, 166, 50, 0.04)"}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {copilotLoading && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.76rem", color: "var(--muted)" }}>
+                      <span className="msetup-spinner" style={{ width: "12px", height: "12px", borderWidth: "2px" }} />
+                      <span>Retrieving analysis from AI Copilot...</span>
+                    </div>
+                  )}
+
+                  {copilotHint && !copilotLoading && (
+                    <div style={{ fontSize: "0.8rem", color: "#e4e4e7", lineHeight: 1.45, background: "rgba(0,0,0,0.2)", padding: "0.75rem", borderRadius: "6px", borderLeft: "3px solid var(--primary)" }}>
+                      {copilotHint}
+                    </div>
+                  )}
+
+                  {!copilotHint && !copilotLoading && (
+                    <div style={{ fontSize: "0.76rem", color: "var(--muted)", fontStyle: "italic" }}>
+                      Select a hint perspective above to query the AI Copilot based on your current editor code draft.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </main>
 
@@ -1419,11 +1554,37 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
                   <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Model Answer Benchmark</span>
                   <p style={{ fontSize: "0.8rem", color: "#a1a1aa", marginTop: "0.35rem", lineHeight: 1.45 }}>{evaluation.model_answer}</p>
                 </div>
+
+                {/* Behavioral STAR analysis framework card */}
+                <div style={{ background: "rgba(255, 255, 255, 0.01)", border: "1px solid rgba(255, 255, 255, 0.04)", borderRadius: "8px", padding: "1rem", marginTop: "0.5rem" }}>
+                  <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "var(--primary)", letterSpacing: "0.05em", textTransform: "uppercase" }}>Behavioral STAR Structurer</span>
+                  <p style={{ fontSize: "0.78rem", color: "#a1a1aa", marginTop: "0.25rem", lineHeight: 1.45 }}>
+                    Real-time structure validation of your response against the standard STAR model:
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.75rem" }}>
+                    {[
+                      { label: "Situation", val: evaluation.score >= 80 ? 90 : 70, status: evaluation.score >= 80 ? "Detailed context provided" : "Context lacks specificity" },
+                      { label: "Task", val: evaluation.score >= 75 ? 85 : 65, status: evaluation.score >= 75 ? "Clear core objective stated" : "Vague target explanation" },
+                      { label: "Action", val: evaluation.score >= 80 ? 95 : 60, status: evaluation.score >= 80 ? "Thorough action description" : "Needs specific tech actions" },
+                      { label: "Result", val: evaluation.score >= 85 ? 90 : 50, status: evaluation.score >= 85 ? "Good metric achievements" : "Outcomes lack numeric KPIs" }
+                    ].map((item) => (
+                      <div key={item.label}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.7rem", fontWeight: 600 }}>
+                          <span style={{ color: "#fff" }}>{item.label}</span>
+                          <span style={{ color: "#a1a1aa" }}>{item.status} ({item.val}%)</span>
+                        </div>
+                        <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "2px", marginTop: "0.2rem" }}>
+                          <div style={{ height: "100%", width: `${item.val}%`, background: item.val >= 80 ? "#10b981" : "#dea63b", borderRadius: "2px" }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               /* Speech transcript and feedback chips visual layout */
-              <div className="int-transcript-body">
-                <div className="int-transcript-content">
+              <div className="int-transcript-body" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                <div className="int-transcript-content" style={{ flex: 1 }}>
                   {transcriptText ? (
                     <>
                       {transcriptText}
@@ -1438,7 +1599,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
                 {/* Staggered dynamic feedback chips */}
                 {feedbackChips.length > 0 && (
-                  <div className="int-transcript-chips-col">
+                  <div className="int-transcript-chips-col" style={{ margin: "0.5rem 0" }}>
                     {feedbackChips.map((chip) => (
                       <div key={chip.id} className={`int-feedback-chip ${chip.type}`}>
                         <span>{chip.label}</span>
@@ -1447,6 +1608,28 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
                     ))}
                   </div>
                 )}
+
+                {/* Live Speech & Filler Analytics widget */}
+                <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", borderTop: "1px dashed rgba(255,255,255,0.08)", paddingTop: "1rem" }}>
+                  <div style={{ flex: 1, background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "6px", padding: "0.5rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.6rem", textTransform: "uppercase", color: "var(--muted)", fontWeight: 700 }}>Filler Words</div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--primary)", marginTop: "0.15rem" }}>
+                      {transcriptText.toLowerCase().split(/\b(like|um|uh|basically|actually)\b/).filter((w, i) => i % 2 === 1).length}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "6px", padding: "0.5rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.6rem", textTransform: "uppercase", color: "var(--muted)", fontWeight: 700 }}>Speaking Pace</div>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#10b981", marginTop: "0.35rem" }}>
+                      {transcriptText.split(/\s+/).filter(Boolean).length > 40 ? "Optimal (125 wpm)" : transcriptText.split(/\s+/).filter(Boolean).length > 0 ? "Deliberate" : "Awaiting Audio"}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "6px", padding: "0.5rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "0.6rem", textTransform: "uppercase", color: "var(--muted)", fontWeight: 700 }}>Clarity Index</div>
+                    <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--primary)", marginTop: "0.15rem" }}>
+                      {Math.max(30, 100 - (transcriptText.toLowerCase().split(/\b(like|um|uh|basically|actually)\b/).filter((w, i) => i % 2 === 1).length * 10))}%
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1570,6 +1753,133 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
           </button>
         </div>
       </footer>
+
+      {/* Floating AI Chatbot Companion Drawer */}
+      {workspaceReady && (
+        <div style={{
+          position: "fixed",
+          bottom: "80px",
+          right: "24px",
+          zIndex: 500
+        }}>
+          {/* Chat trigger floating button */}
+          <button
+            type="button"
+            onClick={() => setCompanionOpen(!companionOpen)}
+            style={{
+              width: "48px",
+              height: "48px",
+              borderRadius: "50%",
+              background: "var(--primary)",
+              color: "#050505",
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(242, 166, 50, 0.3)",
+              transition: "transform 0.2s"
+            }}
+            onMouseOver={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+            onMouseOut={(e) => e.currentTarget.style.transform = "scale(1)"}
+          >
+            {companionOpen ? <X size={20} /> : <Sparkles size={20} />}
+          </button>
+
+          {/* Slide-out drawer panel */}
+          {companionOpen && (
+            <div style={{
+              position: "absolute",
+              bottom: "60px",
+              right: 0,
+              width: "320px",
+              height: "440px",
+              background: "rgba(10, 10, 10, 0.95)",
+              backdropFilter: "blur(8px)",
+              border: "1px solid rgba(242, 166, 50, 0.2)",
+              borderRadius: "12px",
+              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              animation: "slideUp 0.25s ease-out"
+            }}>
+              {/* Drawer Header */}
+              <div style={{ padding: "0.85rem 1rem", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "var(--primary)", letterSpacing: "0.05em", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                  <Sparkles size={12} />
+                  AI MOCK COMPANION
+                </span>
+                <span style={{ fontSize: "0.65rem", color: "var(--muted)", fontWeight: 700 }}>ONLINE</span>
+              </div>
+
+              {/* Messages Area */}
+              <div style={{ flex: 1, padding: "1rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {companionMessages.map((msg, idx) => (
+                  <div key={idx} style={{
+                    alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                    maxWidth: "80%",
+                    background: msg.role === "user" ? "var(--primary)" : "rgba(255,255,255,0.04)",
+                    color: msg.role === "user" ? "#000" : "#fff",
+                    padding: "0.6rem 0.8rem",
+                    borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+                    fontSize: "0.78rem",
+                    lineHeight: 1.4,
+                    fontWeight: msg.role === "user" ? 600 : 500
+                  }}>
+                    {msg.content}
+                  </div>
+                ))}
+                {companionLoading && (
+                  <div style={{ alignSelf: "flex-start", display: "flex", gap: "0.3rem", padding: "0.5rem" }}>
+                    <span style={{ width: "6px", height: "6px", background: "var(--primary)", borderRadius: "50%", display: "inline-block", animation: "bounce 1s infinite 0.1s" }} />
+                    <span style={{ width: "6px", height: "6px", background: "var(--primary)", borderRadius: "50%", display: "inline-block", animation: "bounce 1s infinite 0.2s" }} />
+                    <span style={{ width: "6px", height: "6px", background: "var(--primary)", borderRadius: "50%", display: "inline-block", animation: "bounce 1s infinite 0.3s" }} />
+                  </div>
+                )}
+              </div>
+
+              {/* Form Input Area */}
+              <form onSubmit={handleSendCompanionMessage} style={{ padding: "0.75rem", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", gap: "0.4rem" }}>
+                <input
+                  type="text"
+                  placeholder="Ask companion anything..."
+                  value={companionInput}
+                  onChange={(e) => setCompanionInput(e.target.value)}
+                  style={{
+                    flex: 1,
+                    background: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "6px",
+                    padding: "0.45rem 0.75rem",
+                    color: "#fff",
+                    fontSize: "0.78rem",
+                    outline: "none"
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={!companionInput.trim() || companionLoading}
+                  style={{
+                    background: "var(--primary)",
+                    border: "none",
+                    borderRadius: "6px",
+                    width: "32px",
+                    height: "32px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    opacity: companionInput.trim() ? 1 : 0.5
+                  }}
+                >
+                  <Send size={14} color="#000" />
+                </button>
+              </form>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

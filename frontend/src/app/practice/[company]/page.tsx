@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  Bell,
-  Settings,
   Check,
   ExternalLink,
   ThumbsUp,
@@ -14,6 +12,7 @@ import {
   X,
   PlusCircle
 } from "lucide-react";
+import DashboardHeader from "@/components/DashboardHeader";
 
 interface TrackProblem {
   id: string;
@@ -216,39 +215,7 @@ export default function CompanyTrackPage() {
   return (
     <div className="prac-page">
       {/* Header Bar */}
-      <header className="dash-header">
-        <Link href="/dashboard" className="dash-logo-wrap">
-          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="6" fill="#dea63b" fillOpacity="0.12" />
-            <rect x="6" y="6" width="20" height="20" rx="3" fill="#dea63b" fillOpacity="0.25" />
-            <rect x="10" y="10" width="12" height="12" rx="2" fill="#dea63b" />
-          </svg>
-          <span className="dash-logo-text">Prepora</span>
-        </Link>
-
-        <nav className="dash-nav">
-          <span className="dash-nav-link" onClick={() => router.push("/dashboard")}>Home</span>
-          <span className="dash-nav-link active" onClick={() => router.push("/practice")}>Practice</span>
-          <span className="dash-nav-link" onClick={() => router.push("/setup")}>Mock Interview</span>
-          <span className="dash-nav-link" onClick={() => router.push("/progress")}>Progress</span>
-        </nav>
-
-        <div className="dash-header-actions">
-          <button className="dash-icon-btn" aria-label="Notifications">
-            <Bell size={18} />
-          </button>
-          <button className="dash-icon-btn" aria-label="Settings" onClick={() => router.push("/setup")}>
-            <Settings size={18} />
-          </button>
-          <div className="dash-avatar" onClick={() => {
-            localStorage.removeItem("prepora_user_id");
-            localStorage.removeItem("prepora_user_name");
-            router.push("/");
-          }} title="Sign Out">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-        </div>
-      </header>
+      <DashboardHeader activeTab="practice" />
 
       {/* Main Track details */}
       <main className="detail-page-container">

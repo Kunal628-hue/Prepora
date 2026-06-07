@@ -1,9 +1,10 @@
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
+import json
 
 from backend.config import settings
 from backend.database import engine, Base, get_db
@@ -34,6 +35,45 @@ except Exception:
         logger.error(f"Database migration failed: {e}")
 
 app = FastAPI(title="Prepora API", description="AI Interview Coaching Platform Backend")
+
+# WebSocket Notifications Connection Manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"New WebSocket client connected. Active connections count: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        logger.info(f"WebSocket client disconnected. Active connections count: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        payload = json.dumps(message)
+        logger.info(f"Broadcasting notification message: {payload}")
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(payload)
+            except Exception as e:
+                logger.error(f"Error broadcasting to connection: {e}")
+
+notification_manager = ConnectionManager()
+
+@app.websocket("/api/notifications/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await notification_manager.connect(websocket)
+    try:
+        while True:
+            # Maintain the connection, check for incoming client pings or text
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        notification_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket connection error: {e}")
+        notification_manager.disconnect(websocket)
 
 # Setup CORS
 app.add_middleware(
@@ -406,6 +446,13 @@ async def start_interview(session_in: schemas.InterviewSessionCreate, db: Sessio
     
     # Refresh to load questions relationships
     db.refresh(db_session)
+    
+    # Broadcast real-time notification
+    await notification_manager.broadcast({
+        "text": f"🎯 New {db_session.level} {db_session.role} mock interview session initialized!",
+        "icon": "🎯"
+    })
+    
     return db_session
 
 @app.post("/api/interviews/{session_id}/respond", response_model=schemas.AnswerSubmitResponse)
@@ -597,6 +644,13 @@ async def end_interview(
         structure_score=structure_score
     )
 
+    # Broadcast real-time notification
+    grade = "A+" if overall_score >= 95 else "A" if overall_score >= 90 else "A-" if overall_score >= 85 else "B+" if overall_score >= 80 else "B" if overall_score >= 75 else "B-" if overall_score >= 70 else "C+" if overall_score >= 65 else "C" if overall_score >= 60 else "D"
+    await notification_manager.broadcast({
+        "text": f"🎉 Interview completed! You scored {overall_score}% ({grade}) in the {db_session.role} mock interview.",
+        "icon": "🎉"
+    })
+
     return db_session
 
 @app.get("/api/interviews/{session_id}", response_model=schemas.InterviewSessionResponse)
@@ -605,6 +659,18 @@ def get_interview(session_id: str, db: Session = Depends(get_db)):
     if not db_session:
         raise HTTPException(status_code=404, detail="Interview session not found")
     return db_session
+
+@app.delete("/api/interviews/{session_id}")
+def delete_interview(session_id: str, db: Session = Depends(get_db)):
+    """Cancel and delete a scheduled or active mock interview session."""
+    logger.info(f"Deleting/Cancelling interview session: {session_id}")
+    db_session = crud.get_session(db, session_id)
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+    db.delete(db_session)
+    db.commit()
+    return {"status": "success", "message": "Interview session successfully cancelled."}
+
 
 @app.get("/api/interviews", response_model=List[schemas.InterviewSessionListResponse])
 def list_interviews(user_id: Optional[str] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
@@ -698,3 +764,86 @@ def list_categories():
         ],
         "total_count": get_total_count()
     }
+
+
+# ──── NEW AI FEATURE ENDPOINTS ────
+
+@app.post("/api/ai/resume-gap-analysis", response_model=schemas.ResumeGapAnalysisResponse)
+async def resume_gap_analysis(payload: schemas.ResumeGapAnalysisRequest):
+    """Analyze resume skills against a job description to find missing skills and provide a roadmap."""
+    result = await llm.analyze_resume_gap(
+        role=payload.role,
+        level=payload.level,
+        tech_stack=payload.tech_stack,
+        job_description=payload.job_description
+    )
+    # Broadcast real-time notification
+    match_pct = result.match_percentage if hasattr(result, "match_percentage") else result.get("match_percentage", 0) if isinstance(result, dict) else 0
+    await notification_manager.broadcast({
+        "text": f"📄 Resume gap analysis completed for {payload.role}! Fit Score: {match_pct}%.",
+        "icon": "📄"
+    })
+
+    return result
+
+@app.post("/api/ai/copilot-hint", response_model=schemas.CopilotHintResponse)
+async def copilot_hint(payload: schemas.CopilotHintRequest):
+    """Provide a targeted copilot hint (code structure, complexity, or edge cases) for a question."""
+    hint_text = await llm.get_copilot_hint(
+        question_text=payload.question_text,
+        answer_draft=payload.answer_draft,
+        hint_type=payload.hint_type
+    )
+    return {"hint": hint_text}
+
+@app.post("/api/ai/companion-chat", response_model=schemas.CompanionChatResponse)
+async def companion_chat(payload: schemas.CompanionChatRequest):
+    """Chat with the AI Interview Companion for support or clarification."""
+    history_dicts = [{"role": msg.role, "content": msg.content} for msg in payload.history]
+    reply = await llm.get_companion_reply(
+        question_text=payload.question_text,
+        answer_draft=payload.answer_draft,
+        history=history_dicts,
+        message=payload.message
+    )
+    return {"response": reply}
+
+@app.post("/api/ai/negotiate", response_model=schemas.NegotiateResponse)
+async def negotiate(payload: schemas.NegotiateRequest):
+    """Simulate a salary offer negotiation roleplay turn with an AI recruiter."""
+    history_dicts = [{"role": msg.role, "content": msg.content} for msg in payload.history]
+    result = await llm.get_negotiate_reply(
+        history=history_dicts,
+        message=payload.message
+    )
+    # Broadcast real-time notification
+    offer_str = result.current_offer if hasattr(result, "current_offer") else result.get("current_offer", "") if isinstance(result, dict) else ""
+    await notification_manager.broadcast({
+        "text": f"💬 Recruiter Sarah adjusted offer package to {offer_str}",
+        "icon": "💬"
+    })
+
+    return result
+
+@app.get("/api/users/{user_id}", response_model=schemas.UserResponse)
+def get_user(user_id: str, db: Session = Depends(get_db)):
+    db_user = crud.get_user(db, user_id)
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+@app.put("/api/users/{user_id}", response_model=schemas.UserResponse)
+async def update_user_settings(user_id: str, payload: schemas.UserUpdateRequest, db: Session = Depends(get_db)):
+    db_user = crud.update_user(db, user_id, **payload.dict(exclude_unset=True))
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Broadcast settings update via WebSocket
+    await notification_manager.broadcast({
+        "text": f"⚙️ Workspace settings updated! Target role: {db_user.role_targeting}.",
+        "icon": "⚙️"
+    })
+    
+    return db_user
+
+

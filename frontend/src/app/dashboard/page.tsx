@@ -4,15 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
-  Bell, 
-  Settings, 
   Flame, 
   Check, 
   AlertCircle,
   TrendingUp,
   Award,
-  ChevronRight
+  ChevronRight,
+  ArrowRight
 } from "lucide-react";
+import DashboardHeader from "@/components/DashboardHeader";
 
 interface InterviewSession {
   id: string;
@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState<CategoryCount[]>([]);
   const [totalProblemsCount, setTotalProblemsCount] = useState(450);
   const [solvedProblems, setSolvedProblems] = useState<string[]>([]);
+  const [problemToCategory, setProblemToCategory] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [backendOffline, setBackendOffline] = useState(false);
 
@@ -50,27 +51,62 @@ export default function Dashboard() {
   const [recommendedPlan, setRecommendedPlan] = useState<Array<{ id: string; text: string; difficulty: string; type: string; checked: boolean; link: string }>>([]);
 
   // Streak state
-  const [streakDays, setStreakDays] = useState(3);
+  const [streakDays, setStreakDays] = useState(0);
+
+  // Dynamic Greeting state
+  const [greeting, setGreeting] = useState("Good morning");
+
+  // Dynamic targeting configurations
+  const [targetCompanies, setTargetCompanies] = useState<string[]>([]);
+
+  useEffect(() => {
+    const loadTargets = () => {
+      try {
+        const stored = localStorage.getItem("prepora_target_companies");
+        if (stored) {
+          setTargetCompanies(JSON.parse(stored));
+        } else {
+          setTargetCompanies([]);
+        }
+      } catch {
+        setTargetCompanies([]);
+      }
+    };
+    loadTargets();
+    window.addEventListener("prepora_settings_updated", loadTargets);
+    return () => {
+      window.removeEventListener("prepora_settings_updated", loadTargets);
+    };
+  }, []);
 
   // Initial demo data injection helper (if user has 0 solved items, seed a few to match visual theme)
   useEffect(() => {
-    const savedSolved = localStorage.getItem("prepora_solved_problems");
-    if (!savedSolved) {
-      // Seed with some default completed problems so progress isn't empty on first run
-      const defaultSolved = [
-        "ARRAYS-1", "ARRAYS-2", "ARRAYS-3", "ARRAYS-4", "ARRAYS-5",
-        "TREES-1", "TREES-2",
-        "DYNAMIC PROG.-1"
-      ];
-      localStorage.setItem("prepora_solved_problems", JSON.stringify(defaultSolved));
-      setSolvedProblems(defaultSolved);
+    // Set greeting based on current hour
+    const hour = new Date().getHours();
+    if (hour < 12) {
+      setGreeting("Good morning");
+    } else if (hour < 17) {
+      setGreeting("Good afternoon");
     } else {
+      setGreeting("Good evening");
+    }
+
+    const savedSolved = localStorage.getItem("prepora_solved_company_problems");
+    let solvedList: string[] = [];
+    if (savedSolved) {
       try {
-        setSolvedProblems(JSON.parse(savedSolved));
+        const companyKeys = JSON.parse(savedSolved);
+        const uniqueTitles = new Set<string>();
+        companyKeys.forEach((key: string) => {
+          const probTitle = key.split('_').slice(1).join('_').toLowerCase();
+          if (probTitle) uniqueTitles.add(probTitle);
+        });
+        solvedList = Array.from(uniqueTitles);
       } catch (e) {
-        setSolvedProblems([]);
+        console.error(e);
       }
     }
+    setSolvedProblems(solvedList);
 
     const savedPlan = localStorage.getItem("prepora_recommended_plan");
     if (savedPlan) {
@@ -119,12 +155,26 @@ export default function Dashboard() {
         const sessionData: InterviewSession[] = await sessionRes.json();
         setSessions(sessionData);
 
-        // 2. Fetch categories
-        const catRes = await fetch("http://127.0.0.1:8000/api/problems/categories");
-        if (!catRes.ok) throw new Error("Failed to fetch categories");
-        const catData = await catRes.json();
-        setCategories(catData.categories || []);
-        setTotalProblemsCount(catData.total_count || 450);
+        // 2. Fetch problems and build category mapping
+        const probRes = await fetch("http://127.0.0.1:8000/api/problems");
+        if (!probRes.ok) throw new Error("Failed to fetch problems");
+        const probData = await probRes.json();
+        
+        const categoriesList = probData.categories || ["Arrays", "Strings", "Linked Lists", "Trees", "Graphs", "Dynamic Programming", "Greedy"];
+        const problemsByCategory = probData.problems || {};
+        
+        const mapping: Record<string, string> = {};
+        const catCounts = categoriesList.map((catName: string) => {
+          const list = problemsByCategory[catName] || [];
+          list.forEach((p: any) => {
+            mapping[p.title.toLowerCase()] = catName.toUpperCase();
+          });
+          return { name: catName.toUpperCase(), count: list.length };
+        });
+        
+        setProblemToCategory(mapping);
+        setCategories(catCounts);
+        setTotalProblemsCount(probData.total_count || 226);
 
         setBackendOffline(false);
       } catch (err) {
@@ -207,7 +257,7 @@ export default function Dashboard() {
   const totalSolvedCount = solvedProblems.length;
   
   const getSolvedForCategory = (catName: string) => {
-    return solvedProblems.filter(p => p.toLowerCase().startsWith(catName.toLowerCase() + "-")).length;
+    return solvedProblems.filter(p => problemToCategory[p] === catName.toUpperCase()).length;
   };
 
   const getTotalForCategory = (catName: string) => {
@@ -232,9 +282,11 @@ export default function Dashboard() {
 
   const formatScheduledTime = (dateStr: string) => {
     try {
-      const d = new Date(dateStr);
+      const rawDate = dateStr.includes(" at ") ? dateStr.split(" at ")[0] : dateStr;
+      const rawTime = dateStr.includes(" at ") ? dateStr.split(" at ")[1] : "10:00 AM";
+      const d = new Date(rawDate);
       if (isNaN(d.getTime())) return dateStr;
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).toUpperCase() + " AT 10:00 AM";
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).toUpperCase() + " AT " + rawTime.toUpperCase();
     } catch {
       return dateStr;
     }
@@ -247,14 +299,38 @@ export default function Dashboard() {
     let endDateStr = "20260609T104500Z";
     
     if (sessionObj.scheduled_time) {
-      const cleanDate = sessionObj.scheduled_time.replace(/[^\d-]/g, ""); // "2026-06-09"
+      const cleanDate = sessionObj.scheduled_time.replace(/[^\d-]/g, "").substring(0, 10); // get "YYYY-MM-DD" portion
       const parts = cleanDate.split("-");
       if (parts.length === 3) {
         const year = parts[0];
         const month = parts[1].padStart(2, "0");
         const day = parts[2].padStart(2, "0");
-        dateStr = `${year}${month}${day}T100000Z`;
-        endDateStr = `${year}${month}${day}T104500Z`;
+        
+        let hourStr = "10";
+        let minStr = "00";
+        const rawTime = sessionObj.scheduled_time.includes(" at ") ? sessionObj.scheduled_time.split(" at ")[1] : "10:00 AM";
+        if (rawTime.includes("AM")) {
+          const val = parseInt(rawTime.split(":")[0]);
+          const parsedHour = val === 12 ? 0 : val;
+          hourStr = parsedHour.toString().padStart(2, "0");
+        } else if (rawTime.includes("PM")) {
+          const val = parseInt(rawTime.split(":")[0]);
+          const parsedHour = val === 12 ? 12 : val + 12;
+          hourStr = parsedHour.toString().padStart(2, "0");
+        }
+        
+        dateStr = `${year}${month}${day}T${hourStr}${minStr}00Z`;
+        
+        // Add 45 minutes duration
+        const durationMin = 45;
+        const endMin = (parseInt(minStr) + durationMin) % 60;
+        const carryHour = Math.floor((parseInt(minStr) + durationMin) / 60);
+        const endHour = (parseInt(hourStr) + carryHour) % 24;
+        
+        const endHourStr = endHour.toString().padStart(2, "0");
+        const endMinStr = endMin.toString().padStart(2, "0");
+        
+        endDateStr = `${year}${month}${day}T${endHourStr}${endMinStr}00Z`;
       }
     }
     
@@ -315,39 +391,7 @@ export default function Dashboard() {
       )}
 
       {/* Header Bar */}
-      <header className="dash-header">
-        <Link href="/dashboard" className="dash-logo-wrap">
-          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="6" fill="#dea63b" fillOpacity="0.12" />
-            <rect x="6" y="6" width="20" height="20" rx="3" fill="#dea63b" fillOpacity="0.25" />
-            <rect x="10" y="10" width="12" height="12" rx="2" fill="#dea63b" />
-          </svg>
-          <span className="dash-logo-text">Prepora</span>
-        </Link>
-
-        <nav className="dash-nav">
-          <span className="dash-nav-link active">Home</span>
-          <span className="dash-nav-link" onClick={() => router.push("/practice")}>Practice</span>
-          <span className="dash-nav-link" onClick={() => router.push("/setup")}>Mock Interview</span>
-          <span className="dash-nav-link" onClick={() => router.push("/progress")}>Progress</span>
-        </nav>
-
-        <div className="dash-header-actions">
-          <button className="dash-icon-btn" aria-label="Notifications">
-            <Bell size={18} />
-          </button>
-          <button className="dash-icon-btn" aria-label="Settings" onClick={() => router.push("/setup")}>
-            <Settings size={18} />
-          </button>
-          <div className="dash-avatar" onClick={() => {
-            localStorage.removeItem("prepora_user_id");
-            localStorage.removeItem("prepora_user_name");
-            router.push("/");
-          }} title="Sign Out">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-        </div>
-      </header>
+      <DashboardHeader activeTab="home" />
 
       {/* Main Container */}
       <main className="dash-container">
@@ -360,7 +404,7 @@ export default function Dashboard() {
             {/* Greeting Row */}
             <div className="dash-greeting-row">
               <div className="dash-greeting-left">
-                <h1 className="dash-greeting">Good morning, {userName} 👋</h1>
+                <h1 className="dash-greeting">{greeting}, {userName} 👋</h1>
                 <p className="dash-subtitle">
                   {streakDays > 0 
                     ? `You've practiced ${streakDays} days in a row. Keep it going!`
@@ -550,13 +594,36 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* Offer Salary Negotiation Card */}
+            <div className="dash-card" style={{ marginTop: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", background: "linear-gradient(135deg, rgba(222, 166, 59, 0.08) 0%, rgba(222, 166, 59, 0.01) 100%)", borderColor: "rgba(222, 166, 59, 0.2)" }}>
+              <div style={{ flex: 1, marginRight: "2rem" }}>
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#dea63b", letterSpacing: "0.08em", textTransform: "uppercase", display: "block" }}>New AI Simulator</span>
+                <h3 style={{ fontSize: "1.2rem", fontWeight: 800, color: "#1c1917", margin: "0.25rem 0" }}>Salary Offer Negotiator</h3>
+                <p style={{ fontSize: "0.85rem", color: "#6b6661", margin: 0, maxWidth: "600px", lineHeight: 1.45 }}>
+                  Practice negotiating your salary and compensation package with a realistic AI Tech Recruiter. Gauge your leverage, score your communication strategy, and earn a scorecard.
+                </p>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => router.push("/negotiate")}
+                className="dash-btn-gold"
+                style={{ width: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: "0.35rem" }}
+              >
+                <span>Start Negotiating</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
             {/* Bottom Section: Preparing for a Company */}
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <h2 className="dash-company-section-title">PREPARING FOR A COMPANY?</h2>
               
               <div className="dash-companies-grid">
                 {/* Google Card */}
-                <div className="dash-company-card">
+                <div className="dash-company-card" style={{ border: targetCompanies.includes("Google") ? "2px solid #dea63b" : "1px solid #e8e5de", position: "relative" }}>
+                  {targetCompanies.includes("Google") && (
+                    <span style={{ position: "absolute", top: "-10px", right: "10px", background: "#dea63b", color: "#ffffff", fontSize: "0.6rem", fontWeight: 900, padding: "2px 6px", borderRadius: "10px", textTransform: "uppercase" }}>Target</span>
+                  )}
                   <div className="dash-company-logo">
                     <svg viewBox="0 0 24 24" width="22" height="22">
                       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -573,7 +640,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* Amazon Card */}
-                <div className="dash-company-card">
+                <div className="dash-company-card" style={{ border: targetCompanies.includes("Amazon") ? "2px solid #dea63b" : "1px solid #e8e5de", position: "relative" }}>
+                  {targetCompanies.includes("Amazon") && (
+                    <span style={{ position: "absolute", top: "-10px", right: "10px", background: "#dea63b", color: "#ffffff", fontSize: "0.6rem", fontWeight: 900, padding: "2px 6px", borderRadius: "10px", textTransform: "uppercase" }}>Target</span>
+                  )}
                   <div className="dash-company-logo">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="#000000">
                       <path d="M18.8 17.85c-1.3 1-3.2 1.6-5.1 1.6-3 0-5.7-1.4-7.2-3.7-.3-.4 0-.8.4-.6 1.8.8 4 1.3 6.3 1.3 1.7 0 3.5-.3 5.1-1 .5-.2.8.2.5.6zM19.4 15.7c-.2-.3-.5-.2-.8 0-1 1-2.4 1.5-4 1.5-2 0-3.6-1.1-4.4-2.8-.2-.3-.5-.2-.7 0-.3.3-.3.8 0 1.1 1 2 3 3.3 5.3 3.3 2 0 3.8-.7 5.1-2 .3-.3.3-.8 0-1.1zM20.2 11.25c.1.3 0 .7-.3.8L15 15c-.3.2-.7.1-.8-.2l-2.6-4.2c-.2-.3-.1-.7.2-.8.3-.2.7-.1.8.2l2.1 3.4 4.5-2.7c.3-.1.6 0 .7.3z" />
@@ -587,7 +657,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* Microsoft Card */}
-                <div className="dash-company-card">
+                <div className="dash-company-card" style={{ border: targetCompanies.includes("Microsoft") ? "2px solid #dea63b" : "1px solid #e8e5de", position: "relative" }}>
+                  {targetCompanies.includes("Microsoft") && (
+                    <span style={{ position: "absolute", top: "-10px", right: "10px", background: "#dea63b", color: "#ffffff", fontSize: "0.6rem", fontWeight: 900, padding: "2px 6px", borderRadius: "10px", textTransform: "uppercase" }}>Target</span>
+                  )}
                   <div className="dash-company-logo">
                     <svg viewBox="0 0 23 23" width="20" height="20">
                       <rect x="0" y="0" width="10.5" height="10.5" fill="#F25022" />
@@ -604,7 +677,10 @@ export default function Dashboard() {
                 </div>
 
                 {/* Flipkart Card */}
-                <div className="dash-company-card">
+                <div className="dash-company-card" style={{ border: targetCompanies.includes("Flipkart") ? "2px solid #dea63b" : "1px solid #e8e5de", position: "relative" }}>
+                  {targetCompanies.includes("Flipkart") && (
+                    <span style={{ position: "absolute", top: "-10px", right: "10px", background: "#dea63b", color: "#ffffff", fontSize: "0.6rem", fontWeight: 900, padding: "2px 6px", borderRadius: "10px", textTransform: "uppercase" }}>Target</span>
+                  )}
                   <div className="dash-company-logo">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="#172337">
                       <path d="M19.5 2h-15C3.12 2 2 3.12 2 4.5v15C2 20.88 3.12 22 4.5 22h15c1.38 0 2.5-1.12 2.5-2.5v-15C22 3.12 20.88 2 19.5 2zm-8.82 14.93c-.93.93-2.43.93-3.36 0l-3.36-3.36c-.93-.93-.93-2.43 0-3.36.93-.93 2.43-.93 3.36 0l1.68 1.68 4.2-4.2c.93-.93 2.43-.93 3.36 0 .93.93.93 2.43 0 3.36l-5.88 5.88z" />

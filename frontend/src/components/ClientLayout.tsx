@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import { NotificationProvider } from "@/components/NotificationContext";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,6 +19,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     normalizedPath === "/login" ||
     normalizedPath === "/signup" ||
     normalizedPath === "/setup" ||
+    normalizedPath === "/negotiate" ||
     normalizedPath.startsWith("/interview") || 
     normalizedPath.startsWith("/report");
 
@@ -29,6 +31,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     normalizedPath === "/login" ||
     normalizedPath === "/signup" ||
     normalizedPath === "/setup" ||
+    normalizedPath === "/negotiate" ||
     normalizedPath.startsWith("/report");
 
   // Dynamically toggle the light-theme class on html and body tags
@@ -45,14 +48,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   if (isFullScreen) {
     const bgStyle = isLightPage ? "#f8f6f1" : "var(--background)";
     return (
-      <div style={{ width: "100%", minHeight: "100vh", display: "flex", flexDirection: "column", background: bgStyle, overflowX: "hidden" }}>
-        {children}
-      </div>
+      <NotificationProvider>
+        <div style={{ width: "100%", minHeight: "100vh", display: "flex", flexDirection: "column", background: bgStyle, overflowX: "hidden" }}>
+          {children}
+        </div>
+      </NotificationProvider>
     );
   }
 
   return (
-    <>
+    <NotificationProvider>
       <Navbar />
       <main className="container">
         {children}
@@ -60,6 +65,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       <footer style={{ borderTop: "1px solid var(--border)", padding: "1.5rem 2rem", textAlign: "center", fontSize: "0.8rem", color: "var(--muted)" }}>
         <p>© {new Date().getFullYear()} Prepora. All rights reserved. Powered by Llama & Gemini Flash.</p>
       </footer>
-    </>
+    </NotificationProvider>
   );
 }

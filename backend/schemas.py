@@ -163,3 +163,66 @@ class CompanyResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+# AI Feature Request/Response Schemas
+class ResumeGapAnalysisRequest(BaseModel):
+    role: Optional[str] = "Software Engineer"
+    level: Optional[str] = "Mid-level"
+    tech_stack: List[str] = []
+    job_description: str
+
+class RoadmapDay(BaseModel):
+    day: int
+    focus: str
+    tasks: List[str]
+
+class ResumeGapAnalysisResponse(BaseModel):
+    match_score: int
+    missing_skills: List[str]
+    soft_skills_tips: List[str]
+    roadmap: List[RoadmapDay]
+
+class CopilotHintRequest(BaseModel):
+    question_text: str
+    answer_draft: str
+    hint_type: str  # "code", "complexity", "edge_cases"
+
+class CopilotHintResponse(BaseModel):
+    hint: str
+
+class CompanionChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class CompanionChatRequest(BaseModel):
+    question_text: str
+    answer_draft: str
+    history: List[CompanionChatMessage] = []
+    message: str
+
+class CompanionChatResponse(BaseModel):
+    response: str
+
+class NegotiateMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class NegotiateRequest(BaseModel):
+    history: List[NegotiateMessage] = []
+    message: str
+
+class NegotiateResponse(BaseModel):
+    recruiter_reply: str
+    current_offer: str
+    negotiation_score: int
+    leverage_rating: str
+    status: str  # "active", "accepted", "rejected"
+
+
+class UserUpdateRequest(BaseModel):
+    role_targeting: Optional[str] = None
+    skills: Optional[List[str]] = None
+    target_companies: Optional[List[str]] = None
+
+
+

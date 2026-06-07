@@ -305,3 +305,142 @@ async def parse_resume(file_bytes: bytes, mime_type: str) -> Dict[str, Any]:
         "level": "Mid-level",
         "tech_stack": ["React", "Node.js", "Python", "SQL"]
     }
+
+
+# New AI Feature Implementations
+
+async def analyze_resume_gap(role: str, level: str, tech_stack: List[str], job_description: str) -> Dict[str, Any]:
+    """Analyze a resume against a target job description and return match metrics and a roadmap."""
+    tech_stack_str = ", ".join(tech_stack) if tech_stack else "General Technical Skills"
+    prompt = (
+        f"You are a professional tech recruiter and technical screen coordinator. "
+        f"Analyze this candidate's profile:\n"
+        f"- Target Role: {role}\n"
+        f"- Experience Level: {level}\n"
+        f"- Tech Stack: {tech_stack_str}\n\n"
+        f"Against this target Job Description:\n"
+        f"-----\n"
+        f"{job_description}\n"
+        f"-----\n\n"
+        f"Evaluate the profile for fit and output a JSON object containing the following keys:\n"
+        f"- 'match_score': An integer between 0 and 100 indicating percentage match fit.\n"
+        f"- 'missing_skills': A list of up to 4 key technical skills, tools, or frameworks required/preferred in the job description that are missing from the candidate's profile.\n"
+        f"- 'soft_skills_tips': A list of 2 practical communication or behavioral tips tailored for interviews at this role/level.\n"
+        f"- 'roadmap': A 5-day customized preparation roadmap. This must be a list of 5 objects, each with 'day' (1 to 5), 'focus' (short title string), and 'tasks' (list of exactly 2 actionable practice task strings).\n\n"
+        f"Ensure your output is valid, parseable JSON only."
+    )
+    
+    try:
+        response = await generate_llm_response(prompt, response_json=True)
+        if response:
+            return json.loads(response)
+    except Exception as e:
+        logger.error(f"Error generating resume gap analysis: {e}")
+        
+    # Fallback mock gap report
+    return {
+        "match_score": 75,
+        "missing_skills": ["System Design Architecture", "Kubernetes", "Redis Caching"],
+        "soft_skills_tips": [
+            "Be prepared to use the STAR method to structure your behavioral responses.",
+            "Focus on explaining the trade-offs of your architectural choices clearly."
+        ],
+        "roadmap": [
+            {"day": 1, "focus": "System Design Fundamentals", "tasks": ["Review caching topologies and horizontal scaling strategies.", "Solve 2 mock System Design problems."]},
+            {"day": 2, "focus": "High Availability Databases", "tasks": ["Study relational vs non-relational persistence models.", "Understand database partitioning."]},
+            {"day": 3, "focus": "Container Orchestration", "tasks": ["Learn Kubernetes architecture and Pod lifecycle.", "Read about deployment strategies like Blue-Green."]},
+            {"day": 4, "focus": "Behavioral Alignment", "tasks": ["Draft STAR stories for previous challenging scale conflicts.", "Record yourself answering 3 behavioral mock prompts."]},
+            {"day": 5, "focus": "Final Synthesis & Drill", "tasks": ["Run a full-length mock technical practice session.", "Review key complexity constraints."]}
+        ]
+    }
+
+async def get_copilot_hint(question_text: str, answer_draft: str, hint_type: str) -> str:
+    """Generate a target hint based on current coding question and draft answer."""
+    prompt = (
+        f"You are a friendly, encouraging AI Interview Copilot. The candidate is solving this question:\n"
+        f"\"{question_text}\"\n\n"
+        f"Their current draft response or code in the editor is:\n"
+        f"\"{answer_draft}\"\n\n"
+        f"They have requested a hint of type: \"{hint_type}\" (where 'code' means code/logic structure, "
+        f"'complexity' means time/space complexity optimization, and 'edge_cases' means boundary conditions).\n\n"
+        f"Generate a helpful, concise hint. DO NOT give away the complete code or full answer directly. "
+        f"Guide them conceptually. Keep it to 2-3 sentences max."
+    )
+    
+    try:
+        response = await generate_llm_response(prompt)
+        if response:
+            return response
+    except Exception as e:
+        logger.error(f"Error generating copilot hint: {e}")
+        
+    return "Consider breaking down the problem into smaller subproblems or double checking the boundary cases of your input."
+
+async def get_companion_reply(question_text: str, answer_draft: str, history: List[Dict[str, str]], message: str) -> str:
+    """Respond as a supportive peer chatbot companion during the active interview."""
+    history_str = ""
+    for msg in history[-6:]:  # limit context to last 6 turns
+        role = "Candidate" if msg.get("role") == "user" else "Companion"
+        history_str += f"{role}: {msg.get('content')}\n"
+        
+    prompt = (
+        f"You are a supportive, encouraging AI Interview Companion chat buddy. "
+        f"The candidate is currently taking a mock interview and is dealing with this question:\n"
+        f"\"{question_text}\"\n\n"
+        f"Their current answer draft in progress is:\n"
+        f"\"{answer_draft}\"\n\n"
+        f"Here is your recent chat history:\n{history_str}\n"
+        f"Candidate: {message}\n\n"
+        f"Respond as the friendly companion. Give encouraging tips, clarify concepts, or support them. "
+        f"Keep your response warm, conversational, and brief (1-3 sentences max). Do not solve the question for them."
+    )
+    
+    try:
+        response = await generate_llm_response(prompt)
+        if response:
+            return response
+    except Exception as e:
+        logger.error(f"Error generating companion reply: {e}")
+        
+    return "Keep going, you're doing great! Let me know if you need help with any specific concepts."
+
+async def get_negotiate_reply(history: List[Dict[str, str]], message: str) -> Dict[str, Any]:
+    """Recruiter simulator roleplay for salary offer negotiation."""
+    history_str = ""
+    for msg in history[-8:]:
+        role = "Candidate" if msg.get("role") == "user" else "Recruiter"
+        history_str += f"{role}: {msg.get('content')}\n"
+        
+    prompt = (
+        f"You are a professional tech Recruiter negotiating an offer package with a software engineer candidate.\n"
+        f"- Target Role: Mid-level Software Engineer\n"
+        f"- Recruiters base offer: $120,000 base salary + $10,000 signing bonus.\n"
+        f"- Recruiters maximum budget cap: $155,000 base salary + $15,000 signing bonus.\n\n"
+        f"Negotiation transcript so far:\n{history_str}\n"
+        f"Candidate counter-offer/argument: {message}\n\n"
+        f"Evaluate the candidate's request. Be polite, business-firm, and realistic. "
+        f"Decide whether to increase your offer, accept their counter-offer, or reject it if it's completely unreasonable (above budget cap).\n"
+        f"Output your decision in a valid JSON object only, containing the following keys:\n"
+        f"- 'recruiter_reply': A conversational, realistic reply to the candidate (2-3 sentences).\n"
+        f"- 'current_offer': The current base salary value in dollars (e.g. '$130,000'). Update this only if you increase your offer.\n"
+        f"- 'negotiation_score': An integer (0-100) scoring their negotiation etiquette, clarity, and leverage reasoning.\n"
+        f"- 'leverage_rating': A short descriptor of their strategy (e.g., 'Weak leverage', 'Professional counter-offer', 'Aggressive demand').\n"
+        f"- 'status': One of: 'active' (negotiation in progress), 'accepted' (if you accept their offer/they accept your final offer), 'rejected' (if they refuse standard guidelines and negotiation breaks down).\n\n"
+        f"Ensure output is valid, parseable JSON only."
+    )
+    
+    try:
+        response = await generate_llm_response(prompt, response_json=True)
+        if response:
+            return json.loads(response)
+    except Exception as e:
+        logger.error(f"Error generating negotiation reply: {e}")
+        
+    return {
+        "recruiter_reply": "Thank you for the response. I've reviewed the numbers, and I can stretch our base offer to $130,000 base. How does that sound?",
+        "current_offer": "$130,000",
+        "negotiation_score": 70,
+        "leverage_rating": "Reasonable request",
+        "status": "active"
+    }
+

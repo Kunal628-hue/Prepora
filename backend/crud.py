@@ -83,3 +83,14 @@ def update_session(db: Session, session_id: str, **kwargs):
         db.commit()
         db.refresh(db_session)
     return db_session
+
+def update_user(db: Session, user_id: str, **kwargs):
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if db_user:
+        for key, value in kwargs.items():
+            if value is not None:
+                setattr(db_user, key, value)
+        db.commit()
+        db.refresh(db_user)
+    return db_user
+

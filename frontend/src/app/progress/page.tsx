@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
-  Bell, 
-  Settings, 
   ArrowRight,
   TrendingUp,
   AlertCircle
 } from "lucide-react";
+import DashboardHeader from "@/components/DashboardHeader";
 
 interface InterviewSession {
   id: string;
@@ -40,7 +39,7 @@ export default function ProgressPage() {
   const [solvedCount, setSolvedCount] = useState(0);
   const [sessionsCount, setSessionsCount] = useState(0);
   const [averageScore, setAverageScore] = useState<number>(0);
-  const [streakDays, setStreakDays] = useState(14); // Fallback base streak
+  const [streakDays, setStreakDays] = useState(0); // Start at 0, no mock fallback
   const [categoryList, setCategoryList] = useState<CategoryProgress[]>([]);
   const [chartData, setChartData] = useState<Array<{ date: string; score: number }>>([]);
   const [activityGrid, setActivityGrid] = useState<Array<{ dateStr: string; count: number }>>([]);
@@ -58,12 +57,15 @@ export default function ProgressPage() {
       try {
         setLoading(true);
 
-        // 1. Load Solved Problems from LocalStorage
-        const savedSolved = localStorage.getItem("prepora_solved_problems");
+        const savedSolved = localStorage.getItem("prepora_solved_company_problems");
         let solvedSet = new Set<string>();
         if (savedSolved) {
           try {
-            solvedSet = new Set(JSON.parse(savedSolved));
+            const companyKeys = JSON.parse(savedSolved);
+            companyKeys.forEach((key: string) => {
+              const probTitle = key.split('_').slice(1).join('_').toLowerCase();
+              if (probTitle) solvedSet.add(probTitle);
+            });
           } catch (e) {
             console.error(e);
           }
@@ -83,9 +85,9 @@ export default function ProgressPage() {
 
         const computedProgress: CategoryProgress[] = allCategories.map((catName) => {
           const problemsList = problemsByCategory[catName] || [];
-          // Count solved problems in this category (match by title or id)
+          // Count solved problems in this category (match by title)
           const solvedInCat = problemsList.filter(
-            (p: any) => solvedSet.has(p.id) || solvedSet.has(p.title)
+            (p: any) => solvedSet.has(p.title.toLowerCase())
           ).length;
 
           return {
@@ -186,8 +188,8 @@ export default function ProgressPage() {
           }
         }
         
-        // Seed default streak if it is completely empty to match mockup premium visuals
-        setStreakDays(Math.max(streak, solvedSet.size > 0 ? 14 : 0));
+        // Set streak based on active daily completions
+        setStreakDays(streak);
 
         // Generate 12-week Activity Calendar grid data (84 days)
         const gridDays: Array<{ dateStr: string; count: number }> = [];
@@ -238,39 +240,7 @@ export default function ProgressPage() {
     <div style={{ background: "#f8f6f1", minHeight: "100vh", display: "flex", flexDirection: "column", fontFamily: "var(--font-sans)", color: "#1c1917" }}>
       
       {/* Header Bar */}
-      <header className="dash-header" style={{ position: "sticky", top: 0, zIndex: 100, background: "#ffffff", borderBottom: "1px solid #e5e2d9" }}>
-        <Link href="/dashboard" className="dash-logo-wrap" style={{ textDecoration: "none" }}>
-          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-            <rect x="2" y="2" width="28" height="28" rx="6" fill="#dea63b" fillOpacity="0.12" />
-            <rect x="6" y="6" width="20" height="20" rx="3" fill="#dea63b" fillOpacity="0.25" />
-            <rect x="10" y="10" width="12" height="12" rx="2" fill="#dea63b" />
-          </svg>
-          <span className="dash-logo-text" style={{ fontSize: "1.2rem", fontWeight: 800, color: "#1c1917" }}>Prepora</span>
-        </Link>
-
-        <nav className="dash-nav">
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/dashboard")}>Home</span>
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/practice")}>Practice</span>
-          <span className="dash-nav-link" style={{ cursor: "pointer" }} onClick={() => router.push("/setup")}>Mock Interview</span>
-          <span className="dash-nav-link active" style={{ cursor: "pointer" }} onClick={() => router.push("/progress")}>Progress</span>
-        </nav>
-
-        <div className="dash-header-actions">
-          <button className="dash-icon-btn" aria-label="Notifications" style={{ background: "none", border: "none", cursor: "pointer" }}>
-            <Bell size={18} />
-          </button>
-          <button className="dash-icon-btn" aria-label="Settings" style={{ background: "none", border: "none", cursor: "pointer" }} onClick={() => router.push("/setup")}>
-            <Settings size={18} />
-          </button>
-          <div className="dash-avatar" style={{ cursor: "pointer" }} onClick={() => {
-            localStorage.removeItem("prepora_user_id");
-            localStorage.removeItem("prepora_user_name");
-            router.push("/");
-          }} title="Sign Out">
-            {userName.charAt(0).toUpperCase()}
-          </div>
-        </div>
-      </header>
+      <DashboardHeader activeTab="progress" style={{ position: "sticky", top: 0, zIndex: 100, background: "#ffffff", borderBottom: "1px solid #e5e2d9" }} />
 
       {/* Main Scorecard View */}
       <main style={{ maxWidth: "1100px", margin: "2.5rem auto", padding: "0 1.5rem", width: "100%", flex: 1 }}>
