@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useEffect, useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
@@ -192,7 +193,9 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(handler);
   }, [transcriptText]);
 
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const isTranscribingRef = useRef<boolean>(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
   // 1. Initial Speech Synthesis check
@@ -294,13 +297,13 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     if (synthRef.current) {
       synthRef.current.cancel();
     }
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
     }
 
     try {
       const cheatsList = detectedCheatsRef.current.join(", ") || "Multiple integrity violations";
-      const url = new URL(`http://127.0.0.1:8000/api/interviews/${id}/end`);
+      const url = new URL(`${API_BASE_URL}/api/interviews/${id}/end`);
       url.searchParams.append("cheating_detected", "true");
       url.searchParams.append("cheating_details", cheatsList);
 
@@ -656,71 +659,12 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   };
 
   // 6. Active Proctor Feed Heuristics (Webcam Gaze / Audio Whisper check)
-  useEffect(() => {
-    let micHighCount = 0;
-
-    const interval = setInterval(() => {
-      if (cheatingLockedRef.current) return;
-
-      // A. Microphone whisper/talking check
-      if (isMicActiveRef.current && micLevelRef.current > 45 && !isAiSpeakingRef.current && !isListeningRef.current) {
-        micHighCount += 1;
-        if (micHighCount >= 3) {
-          addViolation("Microphone Whisper / Help", "Sustained secondary audio or whisper patterns detected in room.");
-          micHighCount = 0;
-        }
-      } else {
-        micHighCount = 0;
-      }
-
-      // B. Webcam look-away / obstruction check
-      if (isCamActiveRef.current) {
-        const videoElement = document.getElementById("webcam") as HTMLVideoElement;
-        if (videoElement && videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = 80;
-            canvas.height = 60;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-              ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-              const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const data = imgData.data;
-              
-              let totalBrightness = 0;
-              for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-                totalBrightness += 0.299 * r + 0.587 * g + 0.114 * b;
-              }
-              const avgBrightness = totalBrightness / (data.length / 4);
-
-              if (avgBrightness < 15) {
-                addViolation("Webcam Feed Obstructed", "Webcam feed appears completely blocked, obstructed, or dark.");
-              } else {
-                const randomSample = Math.random();
-                if (randomSample > 0.96) {
-                  addViolation("Webcam Look-Away Detected", "Integrity check: Please look directly at the center of the screen.");
-                } else if (randomSample > 0.8) {
-                  logProctorEvent("Webcam: Candidate gaze secured in viewport center.", "info");
-                }
-              }
-            }
-          } catch (e) {
-            console.error("Canvas sampling failed:", e);
-          }
-        }
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Removed per instructions, relying only on tab visibility and blur.
 
   // Fetch Interview State
   const fetchSessionData = async () => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}`);
+      const response = await fetch(`${API_BASE_URL}/api/interviews/${id}`);
       if (!response.ok) {
         throw new Error("Interview session not found.");
       }
@@ -754,59 +698,16 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     fetchSessionData();
 
-    // Setup voice recognition
-    if (typeof window !== "undefined") {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        setSpeechSupported(true);
-        const rec = new SpeechRecognition();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = "en-US";
+    // Setup voice recognition (now using MediaRecorder handled in toggleVoiceRecording)
 
-        rec.onresult = (event: any) => {
-          let interimTranscript = "";
-          let finalTranscript = "";
 
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-
-          if (finalTranscript) {
-            setAnswerText((prev) => {
-              const cleanedPrev = prev.trim();
-              return cleanedPrev ? `${cleanedPrev} ${finalTranscript}` : finalTranscript;
-            });
-            setTranscriptText((prev) => {
-              const cleanedPrev = prev.trim();
-              return cleanedPrev ? `${cleanedPrev} ${finalTranscript}` : finalTranscript;
-            });
-          }
-        };
-
-        rec.onend = () => {
-          setIsListening(false);
-        };
-
-        rec.onerror = (e: any) => {
-          console.error("Recognition error", e);
-          setIsListening(false);
-        };
-
-        recognitionRef.current = rec;
-      }
-    }
 
     return () => {
       if (synthRef.current) {
         synthRef.current.cancel();
       }
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
       }
     };
   }, [id]);
@@ -844,18 +745,63 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     synthRef.current.speak(utterance);
   };
 
-  const toggleVoiceRecording = () => {
-    if (!recognitionRef.current) return;
-
+  const toggleVoiceRecording = async () => {
     if (isListening) {
-      recognitionRef.current.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.stop();
+      }
+      setIsListening(false);
     } else {
       if (synthRef.current) {
         synthRef.current.cancel();
         setIsAiSpeaking(false);
       }
-      recognitionRef.current.start();
-      setIsListening(true);
+      
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          if (isTranscribingRef.current) return;
+          isTranscribingRef.current = true;
+          const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+          const formData = new FormData();
+          formData.append("file", audioBlob, "audio.webm");
+
+          try {
+            const res = await fetch(`${API_BASE_URL}/api/audio/transcribe`, {
+              method: "POST",
+              body: formData,
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.text) {
+                setAnswerText((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
+                setTranscriptText((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
+              }
+            }
+          } catch (e) {
+            console.error("Transcription failed", e);
+          } finally {
+            isTranscribingRef.current = false;
+            // stop tracks
+            stream.getTracks().forEach(track => track.stop());
+          }
+        };
+
+        mediaRecorder.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error("Error accessing microphone:", err);
+      }
     }
   };
 
@@ -867,12 +813,12 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setSubmitting(true);
     setError(null);
 
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}/respond`, {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/${id}/respond`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -920,7 +866,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setCopilotLoading(true);
     setCopilotHint(null);
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/ai/copilot-hint", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/copilot-hint`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -956,7 +902,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setCompanionLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/ai/companion-chat", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/companion-chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -988,12 +934,12 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setSubmitting(true);
     setError(null);
 
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}/respond`, {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/${id}/respond`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1045,7 +991,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     if (screenStream) screenStream.getTracks().forEach(t => t.stop());
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}/end`, {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/${id}/end`, {
         method: "POST",
       });
       if (!response.ok) {

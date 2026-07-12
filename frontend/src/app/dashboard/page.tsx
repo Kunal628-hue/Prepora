@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -150,13 +151,13 @@ export default function Dashboard() {
       try {
         setLoading(true);
         // 1. Fetch sessions
-        const sessionRes = await fetch(`http://127.0.0.1:8000/api/interviews?user_id=${id}`);
+        const sessionRes = await fetch(`${API_BASE_URL}/api/interviews?user_id=${id}`);
         if (!sessionRes.ok) throw new Error("Failed to fetch sessions");
         const sessionData: InterviewSession[] = await sessionRes.json();
         setSessions(sessionData);
 
         // 2. Fetch problems and build category mapping
-        const probRes = await fetch("http://127.0.0.1:8000/api/problems");
+        const probRes = await fetch(`${API_BASE_URL}/api/problems`);
         if (!probRes.ok) throw new Error("Failed to fetch problems");
         const probData = await probRes.json();
         

@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -53,7 +54,7 @@ interface CompanyDetail {
   user_tips: UserFeedbackTip[];
 }
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = `${API_BASE_URL}`;
 
 export default function CompanyTrackPage() {
   const router = useRouter();

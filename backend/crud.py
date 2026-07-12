@@ -29,7 +29,9 @@ def create_session(db: Session, session_in: InterviewSessionCreate):
     return db_session
 
 # User CRUD Helpers
-import hashlib
+import bcrypt
+
+
 
 def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email.lower().strip()).first()
@@ -38,9 +40,9 @@ def get_user(db: Session, user_id: str):
     return db.query(User).filter(User.id == user_id).first()
 
 def create_user(db: Session, user_in: schemas.UserSignupRequest):
-    # Hash password using built-in hashlib
-    password_hash = hashlib.sha256(user_in.password.encode()).hexdigest()
-    
+    # Hash password using passlib bcrypt
+    password_hash = bcrypt.hashpw(user_in.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
     db_user = User(
         full_name=user_in.full_name,
         email=user_in.email.lower().strip(),

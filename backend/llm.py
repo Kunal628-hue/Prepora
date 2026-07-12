@@ -131,6 +131,7 @@ async def generate_first_question(role: str, level: str, tech_stack: Optional[Li
         pass
     
     # Demo fallback
+    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     return MOCK_QUESTIONS[0]
 
 async def generate_next_question(role: str, level: str, transcript: List[Dict[str, str]], tech_stack: Optional[List[str]] = None) -> str:
@@ -190,6 +191,7 @@ async def generate_next_question(role: str, level: str, transcript: List[Dict[st
     
     # Demo fallback
     order = len(transcript)
+    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     if order < len(MOCK_QUESTIONS):
         return MOCK_QUESTIONS[order]
     return "What other challenges did you encounter in this project and how did you resolve them?"
@@ -217,6 +219,7 @@ async def evaluate_answer(question: str, answer: str, role: str, level: str) -> 
     
     # Demo fallback
     import random
+    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     return random.choice(MOCK_CRITIQUES)
 
 async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str]], tech_stack: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -252,6 +255,7 @@ async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str
         logger.error(f"Failed to parse LLM session evaluation: {e}")
         
     # Demo fallback
+    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     return MOCK_SESSION_EVALUATION
 
 async def parse_resume(file_bytes: bytes, mime_type: str) -> Dict[str, Any]:
