@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -37,7 +38,7 @@ export default function DashboardHeader({ activeTab = "none", style }: Dashboard
       }
       const storedId = localStorage.getItem("prepora_user_id");
       if (storedId) {
-        fetch(`http://127.0.0.1:8000/api/users/${storedId}`)
+        fetch(`${API_BASE_URL}/api/users/${storedId}`)
           .then(res => {
             if (res.ok) return res.json();
             throw new Error("Failed to load user settings");
@@ -79,7 +80,7 @@ export default function DashboardHeader({ activeTab = "none", style }: Dashboard
     const storedId = localStorage.getItem("prepora_user_id");
     if (!storedId) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/users/${storedId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${storedId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json"

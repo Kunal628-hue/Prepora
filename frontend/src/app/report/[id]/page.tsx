@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
@@ -65,7 +66,7 @@ export default function InterviewReport({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     const fetchSessionAndHistory = async () => {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/interviews/${id}`);
+        const response = await fetch(`${API_BASE_URL}/api/interviews/${id}`);
         if (!response.ok) {
           throw new Error("Report not found.");
         }
@@ -81,7 +82,7 @@ export default function InterviewReport({ params }: { params: Promise<{ id: stri
         // Fetch user history
         const uId = localStorage.getItem("prepora_user_id");
         if (uId) {
-          const histResponse = await fetch(`http://127.0.0.1:8000/api/interviews?user_id=${uId}`);
+          const histResponse = await fetch(`${API_BASE_URL}/api/interviews?user_id=${uId}`);
           if (histResponse.ok) {
             const list = await histResponse.json();
             const completed = list
@@ -119,7 +120,7 @@ export default function InterviewReport({ params }: { params: Promise<{ id: stri
   }, [id, router]);
 
   const handleDownloadPDF = () => {
-    window.open(`http://127.0.0.1:8000/api/interviews/${id}/report`, "_blank");
+    window.open(`${API_BASE_URL}/api/interviews/${id}/report`, "_blank");
   };
 
   const getQuestionBadgeStyles = (qScore: number | null) => {
@@ -324,7 +325,7 @@ export default function InterviewReport({ params }: { params: Promise<{ id: stri
 
       const dateTarget = nextMockDate.toISOString().split("T")[0]; // YYYY-MM-DD
       
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/start`, {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

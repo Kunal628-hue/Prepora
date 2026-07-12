@@ -1,4 +1,5 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -70,7 +71,7 @@ export default function SetupPage() {
 
   const fetchScheduledSessions = async (id: string) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews?user_id=${id}`);
+      const response = await fetch(`${API_BASE_URL}/api/interviews?user_id=${id}`);
       if (response.ok) {
         const data = await response.json();
         const scheduled = data.filter((s: any) => s.scheduled_time && s.status !== "completed");
@@ -89,7 +90,7 @@ export default function SetupPage() {
   const executeCancelScheduled = async () => {
     if (!sessionToCancel) return;
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/interviews/${sessionToCancel}`, {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/${sessionToCancel}`, {
         method: "DELETE",
       });
       if (response.ok) {
@@ -116,7 +117,7 @@ export default function SetupPage() {
     setAnalyzingGap(true);
     setError(null);
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/ai/resume-gap-analysis", {
+      const response = await fetch(`${API_BASE_URL}/api/ai/resume-gap-analysis`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -170,7 +171,7 @@ export default function SetupPage() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/resume/parse", {
+      const response = await fetch(`${API_BASE_URL}/api/resume/parse`, {
         method: "POST",
         body: formData,
       });
@@ -297,7 +298,7 @@ export default function SetupPage() {
     const finalRole = companyName ? `${companyName} ${typeName}` : typeName;
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/interviews/start", {
+      const response = await fetch(`${API_BASE_URL}/api/interviews/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

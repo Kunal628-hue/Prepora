@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Depends, HTTPException, status, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -35,6 +35,14 @@ except Exception:
         logger.error(f"Database migration failed: {e}")
 
 app = FastAPI(title="Prepora API", description="AI Interview Coaching Platform Backend")
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # WebSocket Notifications Connection Manager
 class ConnectionManager:
@@ -280,6 +288,13 @@ def seed_company_tracks_data(db: Session):
 
 @app.on_event("startup")
 def startup_event():
+    # LLM Provider Startup Logging
+    provider = settings.LLM_PROVIDER
+    api_key = settings.GEMINI_API_KEY if provider == "gemini" else settings.GROQ_API_KEY
+    masked_key = f"***{api_key[-4:]}" if api_key and len(api_key) >= 4 else "Not Configured"
+    logger.info(f"Active LLM Provider: {provider.upper()}")
+    logger.info(f"API Key Present: {masked_key}")
+
     logger.info("Running startup task: Seeding database tables...")
     from backend.database import SessionLocal
     db = SessionLocal()
@@ -341,9 +356,15 @@ def like_company_user_tip(company_id: str, tip_id: str, db: Session = Depends(ge
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "healthy", "provider": settings.LLM_PROVIDER}
+    provider = settings.LLM_PROVIDER
+    api_key = settings.GEMINI_API_KEY if provider == "gemini" else settings.GROQ_API_KEY
+    return {
+        "status": "healthy", 
+        "provider": provider,
+        "api_key_configured": bool(api_key)
+    }
 
-import hashlib
+import bcrypt
 
 @app.post("/api/auth/signup", response_model=schemas.UserResponse)
 async def signup(payload: schemas.UserSignupRequest, db: Session = Depends(get_db)):
@@ -389,10 +410,14 @@ def login(payload: schemas.UserLoginRequest, db: Session = Depends(get_db)):
     if not db_user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
         
-    # Verify password hash
-    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
-    if db_user.password_hash != password_hash:
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    # Verify password hash using passlib bcrypt
+    # (Note: Existing users with sha256 passwords will fail to login, as requested for dev DB)
+    try:
+        if not pwd_context.verify(payload.password, db_user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+    except ValueError:
+        # If the hash is not recognized by bcrypt (e.g. old sha256 hash)
+        raise HTTPException(status_code=401, detail="Invalid email or password. Old accounts must re-register.")
         
     return db_user
 
@@ -420,6 +445,39 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
             
     parsed_info = await llm.parse_resume(contents, mime_type)
     return parsed_info
+
+import httpx
+
+@app.post("/api/audio/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe audio using Groq's Whisper API."""
+    if not settings.GROQ_API_KEY:
+        # Fallback if no API key
+        return {"text": "I heard something, but speech-to-text requires a Groq API key."}
+        
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}"
+    }
+    
+    file_bytes = await file.read()
+    files = {
+        "file": (file.filename or "audio.webm", file_bytes, file.content_type or "audio/webm")
+    }
+    data = {
+        "model": "whisper-large-v3",
+        "response_format": "json"
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(url, headers=headers, data=data, files=files)
+            res.raise_for_status()
+            res_data = res.json()
+            return {"text": res_data.get("text", "")}
+    except Exception as e:
+        logger.error(f"Error transcribing audio: {e}")
+        raise HTTPException(status_code=500, detail="Failed to transcribe audio")
 
 @app.post("/api/interviews/start", response_model=schemas.InterviewSessionResponse)
 async def start_interview(session_in: schemas.InterviewSessionCreate, db: Session = Depends(get_db)):
@@ -769,7 +827,8 @@ def list_categories():
 # ──── NEW AI FEATURE ENDPOINTS ────
 
 @app.post("/api/ai/resume-gap-analysis", response_model=schemas.ResumeGapAnalysisResponse)
-async def resume_gap_analysis(payload: schemas.ResumeGapAnalysisRequest):
+@limiter.limit("10/minute")
+async def resume_gap_analysis(request: Request, payload: schemas.ResumeGapAnalysisRequest):
     """Analyze resume skills against a job description to find missing skills and provide a roadmap."""
     result = await llm.analyze_resume_gap(
         role=payload.role,
@@ -787,7 +846,8 @@ async def resume_gap_analysis(payload: schemas.ResumeGapAnalysisRequest):
     return result
 
 @app.post("/api/ai/copilot-hint", response_model=schemas.CopilotHintResponse)
-async def copilot_hint(payload: schemas.CopilotHintRequest):
+@limiter.limit("10/minute")
+async def copilot_hint(request: Request, payload: schemas.CopilotHintRequest):
     """Provide a targeted copilot hint (code structure, complexity, or edge cases) for a question."""
     hint_text = await llm.get_copilot_hint(
         question_text=payload.question_text,
@@ -797,7 +857,8 @@ async def copilot_hint(payload: schemas.CopilotHintRequest):
     return {"hint": hint_text}
 
 @app.post("/api/ai/companion-chat", response_model=schemas.CompanionChatResponse)
-async def companion_chat(payload: schemas.CompanionChatRequest):
+@limiter.limit("10/minute")
+async def companion_chat(request: Request, payload: schemas.CompanionChatRequest):
     """Chat with the AI Interview Companion for support or clarification."""
     history_dicts = [{"role": msg.role, "content": msg.content} for msg in payload.history]
     reply = await llm.get_companion_reply(
@@ -809,7 +870,8 @@ async def companion_chat(payload: schemas.CompanionChatRequest):
     return {"response": reply}
 
 @app.post("/api/ai/negotiate", response_model=schemas.NegotiateResponse)
-async def negotiate(payload: schemas.NegotiateRequest):
+@limiter.limit("10/minute")
+async def negotiate(request: Request, payload: schemas.NegotiateRequest):
     """Simulate a salary offer negotiation roleplay turn with an AI recruiter."""
     history_dicts = [{"role": msg.role, "content": msg.content} for msg in payload.history]
     result = await llm.get_negotiate_reply(

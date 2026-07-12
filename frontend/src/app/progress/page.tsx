@@ -1,5 +1,7 @@
 "use client";
+import { API_BASE_URL } from "@/lib/api";
 
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -73,7 +75,7 @@ export default function ProgressPage() {
         setSolvedCount(solvedSet.size);
 
         // 2. Fetch problems to compute category-wise progress
-        const probRes = await fetch("http://127.0.0.1:8000/api/problems");
+        const probRes = await fetch(`${API_BASE_URL}/api/problems`);
         let problemsByCategory: Record<string, any[]> = {};
         let allCategories: string[] = ["Arrays", "Strings", "Linked Lists", "Trees", "Graphs", "Dynamic Programming", "Greedy"];
         
@@ -100,7 +102,7 @@ export default function ProgressPage() {
 
         // 3. Fetch Mock Sessions from Backend
         const activeUserId = id || "default_user";
-        const sessionRes = await fetch(`http://127.0.0.1:8000/api/interviews?user_id=${activeUserId}`);
+        const sessionRes = await fetch(`${API_BASE_URL}/api/interviews?user_id=${activeUserId}`);
         let dbSessions: InterviewSession[] = [];
         
         if (sessionRes.ok) {
@@ -360,74 +362,25 @@ export default function ProgressPage() {
                   Complete your first mock interview to display score progressions.
                 </div>
               ) : (
-                <div style={{ position: "relative", height: "220px", marginTop: "1rem" }}>
-                  {/* SVG smooth chart */}
-                  <svg width="100%" height="200" viewBox="0 0 500 200" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="chartGlow" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#dea63b" stopOpacity="0.2" />
-                        <stop offset="100%" stopColor="#dea63b" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Gridlines */}
-                    <line x1="0" y1="20" x2="500" y2="20" stroke="#f5f2eb" strokeWidth="1" />
-                    <line x1="0" y1="100" x2="500" y2="100" stroke="#f5f2eb" strokeWidth="1" />
-                    <line x1="0" y1="180" x2="500" y2="180" stroke="#f5f2eb" strokeWidth="1" />
-
-                    {/* Draw SVG curve path */}
-                    {(() => {
-                      const points = chartData.map((d, index) => {
-                        const x = chartData.length > 1 ? (index / (chartData.length - 1)) * 480 + 10 : 250;
-                        const y = 180 - (d.score / 10) * 160; // scale 0-10 on Y coordinate 180 to 20
-                        return { x, y };
-                      });
-
-                      let pathD = "";
-                      if (points.length === 1) {
-                        pathD = `M 10 180 L 250 ${points[0].y} L 490 ${points[0].y}`;
-                      } else {
-                        // Build bezier curve path
-                        pathD = `M ${points[0].x} ${points[0].y}`;
-                        for (let i = 0; i < points.length - 1; i++) {
-                          const p0 = points[i];
-                          const p1 = points[i + 1];
-                          const cpX1 = p0.x + (p1.x - p0.x) / 2;
-                          const cpY1 = p0.y;
-                          const cpX2 = p0.x + (p1.x - p0.x) / 2;
-                          const cpY2 = p1.y;
-                          pathD += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${p1.x} ${p1.y}`;
-                        }
-                      }
-
-                      // Glow area path
-                      const areaD = `${pathD} L ${points[points.length - 1].x} 180 L ${points[0].x} 180 Z`;
-
-                      return (
-                        <>
-                          <path d={areaD} fill="url(#chartGlow)" />
-                          <path d={pathD} fill="none" stroke="#dea63b" strokeWidth="3" strokeLinecap="round" />
-                          
-                          {/* Dot markers */}
-                          {points.map((p, idx) => (
-                            <g key={idx}>
-                              <circle cx={p.x} cy={p.y} r="5" fill="#dea63b" stroke="#ffffff" strokeWidth="1.5" />
-                              <text x={p.x} y={p.y - 12} fontSize="8" fontWeight="700" fill="#dea63b" textAnchor="middle">
-                                {chartData[idx].score.toFixed(1)}
-                              </text>
-                            </g>
-                          ))}
-                        </>
-                      );
-                    })()}
-                  </svg>
-                  
-                  {/* Axis labels */}
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem", fontSize: "0.7rem", color: "#8e8e93", fontWeight: 700 }}>
-                    <span>{chartData[0]?.date || ""}</span>
-                    <span>{chartData[Math.floor(chartData.length / 2)]?.date || ""}</span>
-                    <span>{chartData[chartData.length - 1]?.date || ""}</span>
-                  </div>
+                <div style={{ height: "250px", marginTop: "1rem" }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#dea63b" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#dea63b" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f2eb" />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#8e8e93", fontWeight: 700 }} />
+                      <YAxis domain={[0, 10]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#8e8e93", fontWeight: 700 }} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}
+                        itemStyle={{ color: "#1c1c1e", fontWeight: 700 }}
+                      />
+                      <Line type="monotone" dataKey="score" stroke="#dea63b" strokeWidth={3} dot={{ r: 4, fill: "#dea63b", strokeWidth: 2, stroke: "#ffffff" }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </div>
