@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
-  Play, 
   Terminal, 
   Cpu, 
   Briefcase, 
@@ -11,14 +10,11 @@ import {
   FileSearch, 
   Users, 
   Sparkles, 
-  ArrowRight,
-  X,
-  Volume2
+  ArrowRight
 } from "lucide-react";
 
 export default function Home() {
   const [simulationCount, setSimulationCount] = useState(2848);
-  const [showVideoModal, setShowVideoModal] = useState(false);
 
   // Live throughput simulator
   useEffect(() => {
@@ -155,14 +151,6 @@ export default function Home() {
                 START FORGING — FREE
               </button>
             </Link>
-            
-            <button 
-              className="btn btn-secondary" 
-              style={{ padding: "0.9rem 2.25rem" }}
-              onClick={() => setShowVideoModal(true)}
-            >
-              WATCH A LIVE MOCK
-            </button>
           </div>
         </div>
 
@@ -475,126 +463,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* --- VIDEO DEMO MODAL --- */}
-      {showVideoModal && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0, 0, 0, 0.85)",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: "1.5rem",
-          animation: "fadeIn 0.25s ease"
-        }}>
-          <div className="glass-card" style={{
-            maxWidth: "700px",
-            width: "100%",
-            padding: "2rem",
-            position: "relative",
-            border: "1px solid var(--primary)"
-          }}>
-            <button 
-              style={{
-                position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                background: "none",
-                border: "none",
-                color: "var(--muted)",
-                cursor: "pointer"
-              }}
-              onClick={() => setShowVideoModal(false)}
-            >
-              <X size={20} />
-            </button>
 
-            <h3 style={{ fontSize: "1.25rem", color: "var(--primary)", fontFamily: "var(--font-display)", marginBottom: "1rem", display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <Sparkles size={18} /> Watch Prepora Simulation
-            </h3>
-
-            {/* Sleek SVG Video Player mock */}
-            <div style={{
-              width: "100%",
-              height: "350px",
-              background: "#0a0a0a",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "1.5rem",
-              position: "relative",
-              overflow: "hidden"
-            }}>
-              {/* Fake soundwave overlay */}
-              <div className="soundwave" style={{ opacity: 0.4, transform: "scale(1.2)" }}>
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-                <div className="soundwave-bar" />
-              </div>
-
-              {/* Glowing core visualizer */}
-              <div style={{
-                width: "60px",
-                height: "60px",
-                borderRadius: "50%",
-                background: "linear-gradient(135deg, var(--primary), var(--accent))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 0 32px var(--primary)",
-                color: "#050505",
-                cursor: "pointer"
-              }}>
-                <Play size={24} fill="currentColor" style={{ marginLeft: "4px" }} />
-              </div>
-
-              <div style={{ textAlign: "center", padding: "0 2rem", zIndex: 10 }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--primary)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                  AI INTERVIEW DIALOGUE DEMO
-                </span>
-                <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.5rem", lineHeight: 1.4 }}>
-                  "Explain how the event loop works, and how you would handle tasks priority."
-                </p>
-              </div>
-              
-              <div style={{
-                position: "absolute",
-                bottom: "1rem",
-                left: "1rem",
-                right: "1rem",
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "0.7rem",
-                color: "var(--muted)",
-                fontWeight: 600
-              }}>
-                <span style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}><Volume2 size={12} /> TTS Voice Synthesis Active</span>
-                <span>00:18 / 02:45</span>
-              </div>
-            </div>
-            
-            <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
-              <Link href="/setup">
-                <button className="btn btn-primary" onClick={() => setShowVideoModal(false)}>
-                  TRY A LIVE MOCK YOURSELF <ArrowRight size={14} />
-                </button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
