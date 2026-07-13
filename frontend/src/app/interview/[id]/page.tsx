@@ -1,5 +1,4 @@
 "use client";
-import { API_BASE_URL } from "@/lib/api";
 
 import { useEffect, useState, useRef, use } from "react";
 import { useRouter } from "next/navigation";
@@ -24,6 +23,7 @@ import {
   Lock,
   Unlock
 } from "lucide-react";
+import { API_BASE_URL } from "@/lib/api";
 
 interface Question {
   id: string;
@@ -90,6 +90,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
   const violationsRef = useRef(0);
   const detectedCheatsRef = useRef<string[]>([]);
+  const tabSwitchCountRef = useRef(0);
 
   // Speech API states
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -193,9 +194,11 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     return () => clearTimeout(handler);
   }, [transcriptText]);
 
+  // Web Speech API recognitionRef removed
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const isTranscribingRef = useRef<boolean>(false);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
   // 1. Initial Speech Synthesis check
@@ -297,8 +300,11 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     if (synthRef.current) {
       synthRef.current.cancel();
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
     }
 
     try {
@@ -515,29 +521,9 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
   // Media toggle handlers
   const toggleCamera = async () => {
-    if (isCamActive) {
-      if (camStream) {
-        camStream.getTracks().forEach(t => t.stop());
-      }
-      setCamStream(null);
-      setIsCamActive(false);
-      const videoElement = document.getElementById("webcam") as HTMLVideoElement;
-      if (videoElement) {
-        videoElement.srcObject = null;
-      }
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        setCamStream(stream);
-        setIsCamActive(true);
-        const videoElement = document.getElementById("webcam") as HTMLVideoElement;
-        if (videoElement) {
-          videoElement.srcObject = stream;
-        }
-      } catch (e) {
-        console.error("Camera startup failed:", e);
-      }
-    }
+    // Webcam support is disabled
+    setCamStream(null);
+    setIsCamActive(false);
   };
 
   const toggleMic = async () => {
@@ -600,13 +586,12 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setInitializingFeeds(true);
     setError(null);
     try {
-      // 1. Request Webcam and Mic
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      const videoStr = new MediaStream(stream.getVideoTracks());
+      // 1. Request Mic (Webcam removed)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioStr = new MediaStream(stream.getAudioTracks());
       
-      setCamStream(videoStr);
-      setIsCamActive(true);
+      setCamStream(null);
+      setIsCamActive(false);
       
       setMicStream(audioStr);
       setIsMicActive(true);
@@ -643,7 +628,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
       setTimeout(() => {
         const videoElement = document.getElementById("webcam") as HTMLVideoElement;
         if (videoElement) {
-          videoElement.srcObject = videoStr;
+          videoElement.srcObject = null;
         }
         const screenElement = document.getElementById("screenshare") as HTMLVideoElement;
         if (screenElement) {
@@ -658,8 +643,27 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     }
   };
 
-  // 6. Active Proctor Feed Heuristics (Webcam Gaze / Audio Whisper check)
-  // Removed per instructions, relying only on tab visibility and blur.
+  // 6. Active Proctor Tab Visibility Change Heuristics
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        tabSwitchCountRef.current += 1;
+        addViolation(
+          "Switched away from interview tab",
+          `Exam policy requires staying active on the interview tab. Switched tabs ${tabSwitchCountRef.current} time(s).`
+        );
+        if (tabSwitchCountRef.current > 2) {
+          logProctorEvent("CRITICAL: User left the interview tab more than twice. Terminating session.", "danger");
+          handleCheatingEndInterview();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   // Fetch Interview State
   const fetchSessionData = async () => {
@@ -698,16 +702,20 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     fetchSessionData();
 
-    // Setup voice recognition (now using MediaRecorder handled in toggleVoiceRecording)
-
-
+    // Check if voice recording is supported via MediaRecorder
+    if (typeof window !== "undefined" && navigator.mediaDevices && (window as any).MediaRecorder) {
+      setSpeechSupported(true);
+    }
 
     return () => {
       if (synthRef.current) {
         synthRef.current.cancel();
       }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach(t => t.stop());
       }
     };
   }, [id]);
@@ -747,7 +755,7 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
 
   const toggleVoiceRecording = async () => {
     if (isListening) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
       setIsListening(false);
@@ -759,48 +767,65 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
       
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStreamRef.current = stream;
+        
+        audioChunksRef.current = [];
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
+        
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
             audioChunksRef.current.push(event.data);
           }
         };
-
+        
         mediaRecorder.onstop = async () => {
-          if (isTranscribingRef.current) return;
-          isTranscribingRef.current = true;
+          stream.getTracks().forEach(track => track.stop());
+          
+          if (audioChunksRef.current.length === 0) return;
+          
           const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-          const formData = new FormData();
-          formData.append("file", audioBlob, "audio.webm");
-
+          setIsTranscribing(true);
+          setError(null);
+          
           try {
-            const res = await fetch(`${API_BASE_URL}/api/audio/transcribe`, {
+            const formData = new FormData();
+            formData.append("file", audioBlob, "recording.webm");
+            
+            const response = await fetch(`${API_BASE_URL}/api/audio/transcribe`, {
               method: "POST",
               body: formData,
             });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.text) {
-                setAnswerText((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
-                setTranscriptText((prev) => (prev.trim() ? `${prev.trim()} ${data.text}` : data.text));
-              }
+            
+            if (!response.ok) {
+              const errText = await response.text();
+              throw new Error(errText || "Failed to transcribe audio.");
             }
-          } catch (e) {
-            console.error("Transcription failed", e);
+            
+            const data = await response.json();
+            if (data.text) {
+              setAnswerText((prev) => {
+                const cleanedPrev = prev.trim();
+                return cleanedPrev ? `${cleanedPrev} ${data.text}` : data.text;
+              });
+              setTranscriptText((prev) => {
+                const cleanedPrev = prev.trim();
+                return cleanedPrev ? `${cleanedPrev} ${data.text}` : data.text;
+              });
+            }
+          } catch (err: any) {
+            console.error("Transcription error:", err);
+            setError("Failed to transcribe audio. Verify your Groq API key is set.");
           } finally {
-            isTranscribingRef.current = false;
-            // stop tracks
-            stream.getTracks().forEach(track => track.stop());
+            setIsTranscribing(false);
           }
         };
-
+        
         mediaRecorder.start();
         setIsListening(true);
       } catch (err) {
-        console.error("Error accessing microphone:", err);
+        console.error("Microphone access error:", err);
+        setError("Could not access microphone. Please check permissions.");
       }
     }
   };
@@ -813,8 +838,11 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setSubmitting(true);
     setError(null);
 
-    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
     }
 
     try {
@@ -934,8 +962,11 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
     setSubmitting(true);
     setError(null);
 
-    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+    if (isListening && mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach(t => t.stop());
     }
 
     try {
@@ -1541,6 +1572,12 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
                       Awaiting speech or notes... Talk into your microphone or write code in the editor above.
                     </span>
                   )}
+                  {isTranscribing && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--primary)", fontSize: "0.85rem", marginTop: "0.75rem" }}>
+                      <span style={{ display: "inline-block", width: "12px", height: "12px", borderRadius: "50%", border: "2px solid var(--primary)", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+                      <span>Transcribing audio...</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Staggered dynamic feedback chips */}
@@ -1625,9 +1662,15 @@ export default function ActiveInterview({ params }: { params: Promise<{ id: stri
               className={`int-btn-footer-mic ${isListening ? 'recording' : ''}`}
               onClick={toggleVoiceRecording}
               title={isListening ? "Mute Microphone" : "Unmute Microphone (Record Speech)"}
-              disabled={submitting}
+              disabled={submitting || isTranscribing}
             >
-              {isListening ? <Mic size={18} /> : <MicOff size={18} />}
+              {isTranscribing ? (
+                <span style={{ display: "inline-block", width: "14px", height: "14px", borderRadius: "50%", border: "2px solid #fff", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+              ) : isListening ? (
+                <Mic size={18} />
+              ) : (
+                <MicOff size={18} />
+              )}
             </button>
           )}
 

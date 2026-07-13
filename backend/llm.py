@@ -3,8 +3,18 @@ import logging
 import httpx
 from typing import Dict, Any, List, Optional
 from backend.config import settings
+from backend.database import SessionLocal
+from backend.models import Company, CompanyTip, TrackProblem
 
 logger = logging.getLogger(__name__)
+
+def check_api_configured() -> bool:
+    provider = settings.LLM_PROVIDER.lower() if settings.LLM_PROVIDER else ""
+    if provider == "gemini" and settings.GEMINI_API_KEY:
+        return True
+    if provider == "groq" and settings.GROQ_API_KEY:
+        return True
+    return False
 
 # Mock responses for Demo Mode (if no API keys are provided)
 MOCK_QUESTIONS = [
@@ -113,12 +123,51 @@ async def generate_llm_response(prompt: str, response_json: bool = False) -> str
     logger.warning("No API keys found or configured. Operating in DEMO MODE.")
     return ""
 
-async def generate_first_question(role: str, level: str, tech_stack: Optional[List[str]] = None) -> str:
-    """Generate the initial interview question based on role, level, and tech stack."""
+def fetch_company_info(company_name: str) -> Optional[Dict[str, Any]]:
+    if not company_name:
+        return None
+    db = SessionLocal()
+    try:
+        company = db.query(Company).filter(Company.name.ilike(company_name)).first()
+        if not company:
+            return None
+        tips = db.query(CompanyTip).filter(CompanyTip.company_id == company.id).order_by(CompanyTip.order).all()
+        problems = db.query(TrackProblem).filter(TrackProblem.company_id == company.id).all()
+        
+        tips_list = [f"- {t.title}: {t.content}" for t in tips]
+        return {
+            "tips": "\n".join(tips_list),
+            "topics": ", ".join(set(p.topic for p in problems)) if problems else "general technical problems"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching company info from DB: {e}")
+        return None
+    finally:
+        db.close()
+
+async def generate_first_question(
+    role: str, 
+    level: str, 
+    tech_stack: Optional[List[str]] = None, 
+    company_name: Optional[str] = None
+) -> str:
+    """Generate the initial interview question based on role, level, tech stack, and optional company tips."""
     tech_stack_str = ", ".join(tech_stack) if tech_stack else "general technical skills"
+    
+    company_context = ""
+    if company_name:
+        info = fetch_company_info(company_name)
+        if info:
+            company_context = (
+                f"\nThis interview is for {company_name}. Please style your questions to match {company_name}'s real interview process.\n"
+                f"Specifically, focus your questions on the following topics and patterns: {info['topics']}.\n"
+                f"Incorporate known interview tips for {company_name}:\n{info['tips']}\n"
+            )
+            
     prompt = (
         f"You are an expert interviewer. Generate the first interview question for a candidate interviewing for "
         f"a {level}-level {role} position. The candidate's resume shows they have experience in the following tech stack: {tech_stack_str}.\n"
+        f"{company_context}"
         f"Start the interview by asking a highly relevant technical concept question based on this tech stack and role.\n"
         f"Respond with ONLY the question text itself. Do not include any greeting, introduction, or markdown formatting."
     )
@@ -131,12 +180,32 @@ async def generate_first_question(role: str, level: str, tech_stack: Optional[Li
         pass
     
     # Demo fallback
-    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving first question mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving first question mock fallback because API keys are intentionally not configured (Demo Mode).")
     return MOCK_QUESTIONS[0]
 
-async def generate_next_question(role: str, level: str, transcript: List[Dict[str, str]], tech_stack: Optional[List[str]] = None) -> str:
+async def generate_next_question(
+    role: str, 
+    level: str, 
+    transcript: List[Dict[str, str]], 
+    tech_stack: Optional[List[str]] = None,
+    company_name: Optional[str] = None
+) -> str:
     """Generate the next interview question based on history, tech stack, and session progression."""
     tech_stack_str = ", ".join(tech_stack) if tech_stack else "general technical skills"
+    
+    company_context = ""
+    if company_name:
+        info = fetch_company_info(company_name)
+        if info:
+            company_context = (
+                f"\nThis interview is for {company_name}. Style the question per {company_name}'s known interview tips and guidelines:\n"
+                f"{info['tips']}\n"
+                f"Additionally, their interview process heavily tests the following problem areas/topics: {info['topics']}.\n"
+            )
+
     transcript_str = ""
     for turn in transcript:
         transcript_str += f"Interviewer: {turn.get('question')}\nCandidate: {turn.get('answer')}\n\n"
@@ -159,6 +228,7 @@ async def generate_next_question(role: str, level: str, transcript: List[Dict[st
         f"Do not introduce a new topic in this case. Speak like a real interviewer digging deeper (e.g., 'In your answer you mentioned... but how would you handle...', or 'Your approach works, but what is its time complexity and can we do better?').\n"
         f"2. If the candidate's last response was already comprehensive, deep, and complete (or if the transition to a new round is necessary, e.g. starting the DSA coding round), "
         f"then generate the next question according to the stage guidelines below:\n\n"
+        f"{company_context}"
         f"STAGE GUIDELINES for question {current_question_number}:\n"
     )
     
@@ -190,6 +260,10 @@ async def generate_next_question(role: str, level: str, transcript: List[Dict[st
         pass
     
     # Demo fallback
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving next question mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving next question mock fallback because API keys are intentionally not configured (Demo Mode).")
     order = len(transcript)
     logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     if order < len(MOCK_QUESTIONS):
@@ -218,6 +292,10 @@ async def evaluate_answer(question: str, answer: str, role: str, level: str) -> 
         logger.error(f"Failed to parse LLM evaluation response: {e}")
     
     # Demo fallback
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving answer critique mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving answer critique mock fallback because API keys are intentionally not configured (Demo Mode).")
     import random
     logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
     return random.choice(MOCK_CRITIQUES)
@@ -255,7 +333,10 @@ async def evaluate_session(role: str, level: str, transcript: List[Dict[str, str
         logger.error(f"Failed to parse LLM session evaluation: {e}")
         
     # Demo fallback
-    logger.warning("Serving mock data because LLM API call failed or is unconfigured.")
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving session evaluation mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving session evaluation mock fallback because API keys are intentionally not configured (Demo Mode).")
     return MOCK_SESSION_EVALUATION
 
 async def parse_resume(file_bytes: bytes, mime_type: str) -> Dict[str, Any]:
@@ -304,6 +385,10 @@ async def parse_resume(file_bytes: bytes, mime_type: str) -> Dict[str, Any]:
             logger.error(f"Error parsing resume via Gemini: {e}")
             
     # Fallback to general parsing mock
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving resume parser mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving resume parser mock fallback because API keys are intentionally not configured (Demo Mode).")
     return {
         "role": "Fullstack Engineer",
         "level": "Mid-level",
@@ -342,6 +427,10 @@ async def analyze_resume_gap(role: str, level: str, tech_stack: List[str], job_d
         logger.error(f"Error generating resume gap analysis: {e}")
         
     # Fallback mock gap report
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving resume gap analysis mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving resume gap analysis mock fallback because API keys are intentionally not configured (Demo Mode).")
     return {
         "match_score": 75,
         "missing_skills": ["System Design Architecture", "Kubernetes", "Redis Caching"],
@@ -378,6 +467,10 @@ async def get_copilot_hint(question_text: str, answer_draft: str, hint_type: str
     except Exception as e:
         logger.error(f"Error generating copilot hint: {e}")
         
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving copilot hint mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving copilot hint mock fallback because API keys are intentionally not configured (Demo Mode).")
     return "Consider breaking down the problem into smaller subproblems or double checking the boundary cases of your input."
 
 async def get_companion_reply(question_text: str, answer_draft: str, history: List[Dict[str, str]], message: str) -> str:
@@ -406,6 +499,10 @@ async def get_companion_reply(question_text: str, answer_draft: str, history: Li
     except Exception as e:
         logger.error(f"Error generating companion reply: {e}")
         
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving companion reply mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving companion reply mock fallback because API keys are intentionally not configured (Demo Mode).")
     return "Keep going, you're doing great! Let me know if you need help with any specific concepts."
 
 async def get_negotiate_reply(history: List[Dict[str, str]], message: str) -> Dict[str, Any]:
@@ -440,6 +537,10 @@ async def get_negotiate_reply(history: List[Dict[str, str]], message: str) -> Di
     except Exception as e:
         logger.error(f"Error generating negotiation reply: {e}")
         
+    if check_api_configured():
+        logger.warning("PROD WARNING: Serving recruiter negotiation reply mock fallback because live AI call failed.")
+    else:
+        logger.warning("Serving recruiter negotiation reply mock fallback because API keys are intentionally not configured (Demo Mode).")
     return {
         "recruiter_reply": "Thank you for the response. I've reviewed the numbers, and I can stretch our base offer to $130,000 base. How does that sound?",
         "current_offer": "$130,000",

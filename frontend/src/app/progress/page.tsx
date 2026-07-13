@@ -1,7 +1,5 @@
 "use client";
-import { API_BASE_URL } from "@/lib/api";
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -10,7 +8,33 @@ import {
   TrendingUp,
   AlertCircle
 } from "lucide-react";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import { Line, Bar } from 'react-chartjs-2';
 import DashboardHeader from "@/components/DashboardHeader";
+import { API_BASE_URL } from "@/lib/api";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 interface InterviewSession {
   id: string;
@@ -20,6 +44,10 @@ interface InterviewSession {
   status: string;
   created_at: string;
   overall_score: number | null;
+  technical_score: number | null;
+  communication_score: number | null;
+  problem_solving_score: number | null;
+  structure_score: number | null;
 }
 
 interface CategoryProgress {
@@ -44,6 +72,12 @@ export default function ProgressPage() {
   const [streakDays, setStreakDays] = useState(0); // Start at 0, no mock fallback
   const [categoryList, setCategoryList] = useState<CategoryProgress[]>([]);
   const [chartData, setChartData] = useState<Array<{ date: string; score: number }>>([]);
+  const [skillAverages, setSkillAverages] = useState({
+    technical: 0,
+    communication: 0,
+    problemSolving: 0,
+    structure: 0
+  });
   const [activityGrid, setActivityGrid] = useState<Array<{ dateStr: string; count: number }>>([]);
   const [nextStepText, setNextStepText] = useState("You're doing great! Keep practicing on the topics.");
   const [nextStepTopic, setNextStepTopic] = useState("Trees");
@@ -112,12 +146,30 @@ export default function ProgressPage() {
         const completed = dbSessions.filter(s => s.status === "completed");
         setSessionsCount(completed.length);
 
-        // Calculate average score (scaled to 10)
+        // Calculate average score (scaled to 10) and skill breakdowns
         if (completed.length > 0) {
           const totalScore = completed.reduce((sum, s) => sum + (s.overall_score || 0), 0);
           setAverageScore(totalScore / completed.length / 10);
+          
+          const totalTech = completed.reduce((sum, s) => sum + (s.technical_score || 0), 0);
+          const totalComm = completed.reduce((sum, s) => sum + (s.communication_score || 0), 0);
+          const totalProb = completed.reduce((sum, s) => sum + (s.problem_solving_score || 0), 0);
+          const totalStruct = completed.reduce((sum, s) => sum + (s.structure_score || 0), 0);
+          
+          setSkillAverages({
+            technical: totalTech / completed.length,
+            communication: totalComm / completed.length,
+            problemSolving: totalProb / completed.length,
+            structure: totalStruct / completed.length
+          });
         } else {
           setAverageScore(0);
+          setSkillAverages({
+            technical: 0,
+            communication: 0,
+            problemSolving: 0,
+            structure: 0
+          });
         }
 
         // 4. Generate Chart Points for Scores Over Time
@@ -134,7 +186,7 @@ export default function ProgressPage() {
           });
           return {
             date: formattedDate,
-            score: (s.overall_score || 0) / 10
+            score: s.overall_score || 0
           };
         });
         setChartData(mappedChart);
@@ -236,6 +288,170 @@ export default function ProgressPage() {
     if (count <= 1) return "#fef0d7";
     if (count <= 3) return "#fbd38d";
     return "#dea63b";
+  };
+
+  // Chart configs
+  const lineChartData = {
+    labels: chartData.map(d => d.date),
+    datasets: [
+      {
+        label: 'Overall Score',
+        data: chartData.map(d => d.score),
+        fill: true,
+        borderColor: '#dea63b',
+        backgroundColor: 'rgba(222, 166, 59, 0.08)',
+        tension: 0.35,
+        pointBackgroundColor: '#dea63b',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      }
+    ]
+  };
+
+  const lineChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        min: 0,
+        max: 100,
+        title: {
+          display: true,
+          text: 'Score (out of 100)',
+          color: '#8e8e93',
+          font: {
+            size: 10,
+            weight: 'bold' as const
+          }
+        },
+        ticks: {
+          color: '#8e8e93',
+          stepSize: 20
+        },
+        grid: {
+          color: '#f5f2eb',
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Session Date',
+          color: '#8e8e93',
+          font: {
+            size: 10,
+            weight: 'bold' as const
+          }
+        },
+        ticks: {
+          color: '#8e8e93',
+        },
+        grid: {
+          display: false
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        backgroundColor: '#1c1917',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#dea63b',
+        borderWidth: 1
+      }
+    }
+  };
+
+  const barChartData = {
+    labels: ['Technical', 'Communication', 'Problem Solving', 'Structure'],
+    datasets: [
+      {
+        label: 'Average Score',
+        data: [
+          skillAverages.technical,
+          skillAverages.communication,
+          skillAverages.problemSolving,
+          skillAverages.structure
+        ],
+        backgroundColor: [
+          'rgba(222, 166, 59, 0.75)',
+          'rgba(16, 185, 129, 0.75)',
+          'rgba(59, 130, 246, 0.75)',
+          'rgba(139, 92, 246, 0.75)'
+        ],
+        borderColor: [
+          '#dea63b',
+          '#10b981',
+          '#3b82f6',
+          '#8b5cf6'
+        ],
+        borderWidth: 1.5,
+        borderRadius: 6
+      }
+    ]
+  };
+
+  const barChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      y: {
+        min: 0,
+        max: 100,
+        title: {
+          display: true,
+          text: 'Score (out of 100)',
+          color: '#8e8e93',
+          font: {
+            size: 10,
+            weight: 'bold' as const
+          }
+        },
+        ticks: {
+          color: '#8e8e93',
+          stepSize: 20
+        },
+        grid: {
+          color: '#f5f2eb',
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Skill Areas',
+          color: '#8e8e93',
+          font: {
+            size: 10,
+            weight: 'bold' as const
+          }
+        },
+        ticks: {
+          color: '#8e8e93',
+          font: {
+            weight: 'bold' as const
+          }
+        },
+        grid: {
+          display: false
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        backgroundColor: '#1c1917',
+        titleColor: '#ffffff',
+        bodyColor: '#ffffff',
+        borderColor: '#e5e2d9',
+        borderWidth: 1
+      }
+    }
   };
 
   return (
@@ -362,25 +578,25 @@ export default function ProgressPage() {
                   Complete your first mock interview to display score progressions.
                 </div>
               ) : (
-                <div style={{ height: "250px", marginTop: "1rem" }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 20, right: 20, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#dea63b" stopOpacity={0.8}/>
-                          <stop offset="95%" stopColor="#dea63b" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f2eb" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#8e8e93", fontWeight: 700 }} />
-                      <YAxis domain={[0, 10]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#8e8e93", fontWeight: 700 }} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}
-                        itemStyle={{ color: "#1c1c1e", fontWeight: 700 }}
-                      />
-                      <Line type="monotone" dataKey="score" stroke="#dea63b" strokeWidth={3} dot={{ r: 4, fill: "#dea63b", strokeWidth: 2, stroke: "#ffffff" }} activeDot={{ r: 6 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div style={{ position: "relative", height: "220px", marginTop: "1rem" }}>
+                  <Line data={lineChartData} options={lineChartOptions} />
+                </div>
+              )}
+            </div>
+
+            {/* Skill Breakdown Graph */}
+            <div style={{ background: "#ffffff", border: "1px solid #e5e2d9", borderRadius: "16px", padding: "2rem", boxShadow: "0 4px 12px rgba(0,0,0,0.01)" }}>
+              <h3 style={{ fontSize: "0.75rem", color: "#7f7a72", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "1.5rem", margin: 0 }}>
+                Skills Performance Breakdown
+              </h3>
+
+              {sessionsCount === 0 ? (
+                <div style={{ height: "200px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px dashed #e5e2d9", borderRadius: "8px", color: "#8e8e93", fontSize: "0.85rem" }}>
+                  Complete your first mock interview to view skills analysis.
+                </div>
+              ) : (
+                <div style={{ position: "relative", height: "220px", marginTop: "1rem" }}>
+                  <Bar data={barChartData} options={barChartOptions} />
                 </div>
               )}
             </div>

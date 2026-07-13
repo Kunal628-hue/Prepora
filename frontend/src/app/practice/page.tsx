@@ -1,5 +1,4 @@
 "use client";
-import { API_BASE_URL } from "@/lib/api";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -27,7 +26,9 @@ interface Company {
   mock_questions_count: number;
 }
 
-const API_BASE = `${API_BASE_URL}`;
+import { API_BASE_URL } from "@/lib/api";
+
+const API_BASE = API_BASE_URL;
 
 export default function PracticePage() {
   const router = useRouter();

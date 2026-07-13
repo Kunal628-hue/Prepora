@@ -35,6 +35,7 @@ export default function SetupPage() {
   const [selectedDifficulty, setSelectedDifficulty] = useState<"Easy" | "Medium" | "Hard">("Medium");
   const [selectedDuration, setSelectedDuration] = useState<"20" | "40" | "60">("40");
   const [companyInput, setCompanyInput] = useState("");
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
 
   // Advanced features & Scheduling States
   const [isScheduled, setIsScheduled] = useState(false);
@@ -232,6 +233,19 @@ export default function SetupPage() {
         setUserName(storedName);
       }
     }
+
+    const fetchCompanies = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/companies`);
+        if (res.ok) {
+          const data = await res.json();
+          setCompanies(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch companies:", err);
+      }
+    };
+    fetchCompanies();
   }, []);
 
   const getGoogleCalendarUrl = (sessionObj: any) => {
@@ -309,7 +323,8 @@ export default function SetupPage() {
           level: selectedDifficulty,
           mode: selectedMode,
           scheduled_time: isScheduled ? `${selectedDate} at ${selectedTimeSlot}` : null,
-          tech_stack: parsedTechStack.length > 0 ? parsedTechStack : null
+          tech_stack: parsedTechStack.length > 0 ? parsedTechStack : null,
+          company_name: companyName || null
         }),
       });
 
@@ -614,13 +629,30 @@ export default function SetupPage() {
           <div className="msetup-section" style={{ marginBottom: "2.25rem" }}>
             <span className="msetup-section-label">ANY COMPANY IN MIND? (OPTIONAL)</span>
             <div className="msetup-input-wrap">
-              <input
-                type="text"
+              <select
                 className="msetup-input"
-                placeholder="e.g. Google, Amazon..."
                 value={companyInput}
                 onChange={(e) => setCompanyInput(e.target.value)}
-              />
+                style={{
+                  width: "100%",
+                  padding: "0.75rem 1rem",
+                  background: "#ffffff",
+                  border: "1px solid #e5e2d9",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  color: "#1c1917",
+                  outline: "none",
+                  cursor: "pointer"
+                }}
+              >
+                <option value="">Select a company (Optional)</option>
+                {companies.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

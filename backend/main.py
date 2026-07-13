@@ -1,10 +1,14 @@
 import logging
 from fastapi import FastAPI, Request, Depends, HTTPException, status, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import json
+import httpx
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from backend.config import settings
 from backend.database import engine, Base, get_db
@@ -34,15 +38,31 @@ except Exception:
     except Exception as e:
         logger.error(f"Database migration failed: {e}")
 
-app = FastAPI(title="Prepora API", description="AI Interview Coaching Platform Backend")
-
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+# Check and execute sqlite schema migration for company_name column
+try:
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("SELECT company_name FROM interview_sessions LIMIT 1"))
+except Exception:
+    logger.info("Database migration: Adding company_name column to interview_sessions table...")
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE interview_sessions ADD COLUMN company_name TEXT"))
+        logger.info("Database migration successful.")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
 
 limiter = Limiter(key_func=get_remote_address)
+app = FastAPI(title="Prepora API", description="AI Interview Coaching Platform Backend")
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Maximum 10 requests per minute allowed."}
+    )
 
 # WebSocket Notifications Connection Manager
 class ConnectionManager:
@@ -410,16 +430,45 @@ def login(payload: schemas.UserLoginRequest, db: Session = Depends(get_db)):
     if not db_user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
         
-    # Verify password hash using passlib bcrypt
-    # (Note: Existing users with sha256 passwords will fail to login, as requested for dev DB)
-    try:
-        if not pwd_context.verify(payload.password, db_user.password_hash):
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
-    except ValueError:
-        # If the hash is not recognized by bcrypt (e.g. old sha256 hash)
-        raise HTTPException(status_code=401, detail="Invalid email or password. Old accounts must re-register.")
+    # Verify password hash using direct bcrypt via crud helper
+    if not crud.verify_password(payload.password, db_user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
         
     return db_user
+
+@app.post("/api/audio/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe an uploaded audio file using Groq's Whisper API."""
+    if not settings.GROQ_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail="Groq API key is not configured. Transcription is unavailable."
+        )
+
+    logger.info(f"Received audio transcription request: {file.filename}, content_type: {file.content_type}")
+    
+    file_bytes = await file.read()
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {settings.GROQ_API_KEY}"
+    }
+    
+    files = {
+        "file": (file.filename or "audio.webm", file_bytes, file.content_type or "audio/webm")
+    }
+    data = {
+        "model": "whisper-large-v3"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            res = await client.post(url, headers=headers, files=files, data=data)
+            res.raise_for_status()
+            res_data = res.json()
+            return {"text": res_data.get("text", "")}
+    except Exception as e:
+        logger.error(f"Error calling Groq Whisper API: {e}")
+        raise HTTPException(status_code=500, detail=f"Whisper transcription failed: {str(e)}")
 
 @app.post("/api/resume/parse")
 async def parse_resume_endpoint(file: UploadFile = File(...)):
@@ -487,11 +536,12 @@ async def start_interview(session_in: schemas.InterviewSessionCreate, db: Sessio
     # 1. Create the session in DB
     db_session = crud.create_session(db, session_in)
     
-    # 2. Call LLM to generate the first question, including tech stack
+    # 2. Call LLM to generate the first question, including tech stack and company
     first_question_text = await llm.generate_first_question(
         role=db_session.role,
         level=db_session.level,
-        tech_stack=db_session.tech_stack
+        tech_stack=db_session.tech_stack,
+        company_name=db_session.company_name
     )
     
     # 3. Save the first question in DB
@@ -583,7 +633,8 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
             role=db_session.role,
             level=db_session.level,
             tech_stack=db_session.tech_stack,
-            transcript=answered_turns
+            transcript=answered_turns,
+            company_name=db_session.company_name
         )
         
         # Save next question to DB

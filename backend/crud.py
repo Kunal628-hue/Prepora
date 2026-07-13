@@ -21,6 +21,7 @@ def create_session(db: Session, session_in: InterviewSessionCreate):
         mode=session_in.mode,
         scheduled_time=session_in.scheduled_time,
         tech_stack=session_in.tech_stack,
+        company_name=session_in.company_name,
         status="active"
     )
     db.add(db_session)
@@ -31,7 +32,14 @@ def create_session(db: Session, session_in: InterviewSessionCreate):
 # User CRUD Helpers
 import bcrypt
 
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 
+def get_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def get_user_by_email(db: Session, email: str):
     return db.query(User).filter(User.email == email.lower().strip()).first()
@@ -40,9 +48,8 @@ def get_user(db: Session, user_id: str):
     return db.query(User).filter(User.id == user_id).first()
 
 def create_user(db: Session, user_in: schemas.UserSignupRequest):
-    # Hash password using passlib bcrypt
-    password_hash = bcrypt.hashpw(user_in.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
+    # Hash password using direct bcrypt helper
+    password_hash = get_password_hash(user_in.password)
     db_user = User(
         full_name=user_in.full_name,
         email=user_in.email.lower().strip(),

@@ -30,6 +30,7 @@ class InterviewSessionBase(BaseModel):
     mode: str = "voice"
     scheduled_time: Optional[str] = None
     tech_stack: Optional[List[str]] = None
+    company_name: Optional[str] = None
 
 class InterviewSessionCreate(InterviewSessionBase):
     user_id: Optional[str] = None
@@ -63,6 +64,7 @@ class InterviewSessionListResponse(BaseModel):
     status: str
     overall_score: Optional[int] = None
     tech_stack: Optional[List[str]] = None
+    company_name: Optional[str] = None
 
     class Config:
         from_attributes = True

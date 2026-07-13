@@ -1,6 +1,5 @@
 "use client";
 import { WS_BASE_URL } from "@/lib/api";
-
 import React, { createContext, useContext, useState, useEffect } from "react";
 
 export interface NotificationItem {
@@ -59,7 +58,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (!isMounted) return;
       console.log("Connecting to WebSocket notifications...");
       
-      // Establish WS connection to the FastAPI backend
       socket = new WebSocket(`${WS_BASE_URL}/api/notifications/ws`);
 
       socket.onmessage = (event) => {
