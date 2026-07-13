@@ -18,15 +18,12 @@ export default function Navbar() {
       setUserName(localStorage.getItem("prepora_user_name"));
     }
   }, [pathname]);
-
   const handleSignOut = () => {
-    localStorage.removeItem("prepora_user_id");
-    localStorage.removeItem("prepora_user_name");
+    localStorage.clear();
     setUserId(null);
     setUserName(null);
     router.push("/");
   };
-
   if (pathname === "/signup") return null;
 
   return (

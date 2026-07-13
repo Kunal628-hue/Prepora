@@ -434,7 +434,17 @@ def login(payload: schemas.UserLoginRequest, db: Session = Depends(get_db)):
     if not crud.verify_password(payload.password, db_user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
         
+    # Auto-upgrade legacy hash to bcrypt on successful login
+    if not (db_user.password_hash.startswith("$2b$") or db_user.password_hash.startswith("$2a$")):
+        try:
+            db_user.password_hash = crud.get_password_hash(payload.password)
+            db.commit()
+            logger.info(f"Auto-upgraded legacy SHA-256 password hash to bcrypt for user: {db_user.email}")
+        except Exception as e:
+            logger.error(f"Failed to auto-upgrade password hash: {e}")
+            
     return db_user
+
 
 @app.post("/api/audio/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):

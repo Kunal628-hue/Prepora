@@ -40,13 +40,13 @@ export default function Login() {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Authentication failed.");
       }
-
       const userData = await response.json();
 
+      localStorage.clear();
       localStorage.setItem("prepora_user_id", userData.id);
       localStorage.setItem("prepora_user_name", userData.full_name);
 
-      router.push("/setup");
+      router.push("/dashboard");
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Invalid email or password. Please try again.");

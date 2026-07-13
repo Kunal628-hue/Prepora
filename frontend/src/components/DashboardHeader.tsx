@@ -118,13 +118,10 @@ export default function DashboardHeader({ activeTab = "none", style }: Dashboard
     setTargetSkills(nextSkills);
     saveSettingsToBackend(targetRole, targetCompanies, nextSkills);
   };
-
   const handleSignOut = () => {
-    localStorage.removeItem("prepora_user_id");
-    localStorage.removeItem("prepora_user_name");
+    localStorage.clear();
     router.push("/");
   };
-
   const toggleNotifications = () => {
     setShowNotifications(prev => !prev);
     setShowUserMenu(false);
