@@ -226,5 +226,9 @@ class UserUpdateRequest(BaseModel):
     skills: Optional[List[str]] = None
     target_companies: Optional[List[str]] = None
 
+class CompanyGenerateRequest(BaseModel):
+    name: str
+
+
 
 

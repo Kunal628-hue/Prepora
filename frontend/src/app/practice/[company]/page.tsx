@@ -53,6 +53,7 @@ interface CompanyDetail {
   user_tips: UserFeedbackTip[];
 }
 
+import { getLeetcodeUrl } from "@/lib/dsaProblems";
 import { API_BASE_URL } from "@/lib/api";
 
 const API_BASE = API_BASE_URL;
@@ -336,12 +337,17 @@ export default function CompanyTrackPage() {
                         </div>
 
                         {/* Link out */}
-                        <div
-                          className="detail-col-link"
-                          onClick={() => router.push("/setup")}
-                          title="Start Sandbox Practice"
-                        >
-                          <ExternalLink size={16} />
+                        <div>
+                          <a
+                            href={getLeetcodeUrl(prob.name)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="detail-col-link"
+                            title="Open on LeetCode"
+                            style={{ display: "inline-flex", justifyContent: "center" }}
+                          >
+                            <ExternalLink size={16} />
+                          </a>
                         </div>
                       </div>
                     );

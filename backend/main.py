@@ -331,6 +331,74 @@ def get_companies(db: Session = Depends(get_db)):
     companies = db.query(models.Company).all()
     return companies
 
+@app.post("/api/companies/generate", response_model=schemas.CompanyResponse)
+async def generate_company_track_endpoint(payload: schemas.CompanyGenerateRequest, db: Session = Depends(get_db)):
+    """Generate and seed a new company track dynamically using AI."""
+    company_name = payload.name.strip()
+    if not company_name:
+        raise HTTPException(status_code=400, detail="Company name cannot be empty.")
+    
+    # Check if company already exists
+    existing = db.query(models.Company).filter(models.Company.name.ilike(company_name)).first()
+    if existing:
+        return existing
+        
+    # Query AI to generate details
+    from backend.llm import generate_ai_company_track
+    try:
+        data = await generate_ai_company_track(company_name)
+    except Exception as e:
+        logger.error(f"Error generating company track: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate company track: {str(e)}")
+        
+    # Build company model
+    db_comp = models.Company(
+        name=company_name,
+        description=data.get("description", f"Curated interview path for {company_name}."),
+        difficulty=data.get("difficulty", "MEDIUM"),
+        tags=data.get("tags", ["SWE"]),
+        problems_count=data.get("problems_count", 50),
+        mock_questions_count=data.get("mock_questions_count", 10)
+    )
+    db.add(db_comp)
+    db.flush() # get ID
+    
+    # Build problems
+    for p in data.get("problems", []):
+        db_p = models.TrackProblem(
+            company_id=db_comp.id,
+            name=p.get("name"),
+            difficulty=p.get("difficulty", "MEDIUM"),
+            topic=p.get("topic", "ARRAY")
+        )
+        db.add(db_p)
+        
+    # Build tips
+    for t in data.get("tips", []):
+        db_t = models.CompanyTip(
+            company_id=db_comp.id,
+            title=t.get("title"),
+            content=t.get("content"),
+            order=t.get("order", 1)
+        )
+        db.add(db_t)
+        
+    # Build user tips
+    for ut in data.get("user_tips", []):
+        db_ut = models.UserFeedbackTip(
+            company_id=db_comp.id,
+            content=ut.get("content"),
+            author=ut.get("author", "@user"),
+            time_ago=ut.get("time_ago", "Just now"),
+            likes=ut.get("likes", 0)
+        )
+        db.add(db_ut)
+        
+    db.commit()
+    db.refresh(db_comp)
+    return db_comp
+
+
 @app.get("/api/companies/{company_name}", response_model=schemas.CompanyResponse)
 def get_company_detail(company_name: str, db: Session = Depends(get_db)):
     """Fetch detail page data for a specific company track (case-insensitive)."""
@@ -369,7 +437,7 @@ def like_company_user_tip(company_id: str, tip_id: str, db: Session = Depends(ge
     if not tip:
         raise HTTPException(status_code=404, detail="Feedback tip not found.")
     
-    tip.likes += 1
+    tip.likes += 1  # type: ignore
     db.commit()
     db.refresh(tip)
     return tip
@@ -400,11 +468,11 @@ async def signup(payload: schemas.UserSignupRequest, db: Session = Depends(get_d
     # auto-generate the first mock session linked to this user profile.
     if payload.scheduled_time:
         logger.info(f"Auto-generating mock interview on signup for user: {db_user.email}")
-        role = db_user.role_targeting or "Frontend Engineer"
+        role = str(db_user.role_targeting or "Frontend Engineer")
         level = "Mid-level"
         
         session_in = schemas.InterviewSessionCreate(
-            user_id=db_user.id,
+            user_id=str(db_user.id),
             role=role,
             level=level,
             mode="text",  # default mode for onboarding
@@ -415,7 +483,7 @@ async def signup(payload: schemas.UserSignupRequest, db: Session = Depends(get_d
         # Call LLM to generate the first question
         first_question_text = await llm.generate_first_question(role=role, level=level)
         question_in = schemas.InterviewQuestionCreate(
-            session_id=db_session.id,
+            session_id=str(db_session.id),
             question_text=first_question_text,
             question_order=1
         )
@@ -431,13 +499,14 @@ def login(payload: schemas.UserLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
         
     # Verify password hash using direct bcrypt via crud helper
-    if not crud.verify_password(payload.password, db_user.password_hash):
+    password_hash = str(db_user.password_hash)
+    if not crud.verify_password(payload.password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password.")
         
     # Auto-upgrade legacy hash to bcrypt on successful login
-    if not (db_user.password_hash.startswith("$2b$") or db_user.password_hash.startswith("$2a$")):
+    if not (password_hash.startswith("$2b$") or password_hash.startswith("$2a$")):
         try:
-            db_user.password_hash = crud.get_password_hash(payload.password)
+            db_user.password_hash = crud.get_password_hash(payload.password)  # type: ignore
             db.commit()
             logger.info(f"Auto-upgraded legacy SHA-256 password hash to bcrypt for user: {db_user.email}")
         except Exception as e:
@@ -467,7 +536,8 @@ async def transcribe_audio(file: UploadFile = File(...)):
         "file": (file.filename or "audio.webm", file_bytes, file.content_type or "audio/webm")
     }
     data = {
-        "model": "whisper-large-v3"
+        "model": "whisper-large-v3",
+        "response_format": "json"
     }
 
     try:
@@ -490,53 +560,21 @@ async def parse_resume_endpoint(file: UploadFile = File(...)):
     if len(contents) > 10 * 1024 * 1024: # Limit to 10MB
         raise HTTPException(status_code=400, detail="File size exceeds maximum limit of 10MB.")
         
+    filename = file.filename or ""
     mime_type = file.content_type
     # Fallback/normalize common mime types if missing or generic
     if not mime_type or mime_type == "application/octet-stream":
-        if file.filename.lower().endswith(".pdf"):
+        if filename.lower().endswith(".pdf"):
             mime_type = "application/pdf"
-        elif file.filename.lower().endswith(".png"):
+        elif filename.lower().endswith(".png"):
             mime_type = "image/png"
-        elif file.filename.lower().endswith((".jpg", ".jpeg")):
+        elif filename.lower().endswith((".jpg", ".jpeg")):
             mime_type = "image/jpeg"
         else:
             mime_type = "application/pdf" # default fallback
             
     parsed_info = await llm.parse_resume(contents, mime_type)
     return parsed_info
-
-import httpx
-
-@app.post("/api/audio/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    """Transcribe audio using Groq's Whisper API."""
-    if not settings.GROQ_API_KEY:
-        # Fallback if no API key
-        return {"text": "I heard something, but speech-to-text requires a Groq API key."}
-        
-    url = "https://api.groq.com/openai/v1/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {settings.GROQ_API_KEY}"
-    }
-    
-    file_bytes = await file.read()
-    files = {
-        "file": (file.filename or "audio.webm", file_bytes, file.content_type or "audio/webm")
-    }
-    data = {
-        "model": "whisper-large-v3",
-        "response_format": "json"
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            res = await client.post(url, headers=headers, data=data, files=files)
-            res.raise_for_status()
-            res_data = res.json()
-            return {"text": res_data.get("text", "")}
-    except Exception as e:
-        logger.error(f"Error transcribing audio: {e}")
-        raise HTTPException(status_code=500, detail="Failed to transcribe audio")
 
 @app.post("/api/interviews/start", response_model=schemas.InterviewSessionResponse)
 async def start_interview(session_in: schemas.InterviewSessionCreate, db: Session = Depends(get_db)):
@@ -547,16 +585,17 @@ async def start_interview(session_in: schemas.InterviewSessionCreate, db: Sessio
     db_session = crud.create_session(db, session_in)
     
     # 2. Call LLM to generate the first question, including tech stack and company
+    company_name = getattr(db_session, "company_name")
     first_question_text = await llm.generate_first_question(
-        role=db_session.role,
-        level=db_session.level,
-        tech_stack=db_session.tech_stack,
-        company_name=db_session.company_name
+        role=str(db_session.role),
+        level=str(db_session.level),
+        tech_stack=db_session.tech_stack,  # type: ignore
+        company_name=str(company_name) if company_name else None
     )
     
     # 3. Save the first question in DB
     question_in = schemas.InterviewQuestionCreate(
-        session_id=db_session.id,
+        session_id=str(db_session.id),
         question_text=first_question_text,
         question_order=1
     )
@@ -567,7 +606,7 @@ async def start_interview(session_in: schemas.InterviewSessionCreate, db: Sessio
     
     # Broadcast real-time notification
     await notification_manager.broadcast({
-        "text": f"🎯 New {db_session.level} {db_session.role} mock interview session initialized!",
+        "text": f"🎯 New {str(db_session.level)} {str(db_session.role)} mock interview session initialized!",
         "icon": "🎯"
     })
     
@@ -580,7 +619,7 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
     if not db_session:
         raise HTTPException(status_code=404, detail="Interview session not found")
         
-    if db_session.status != "active":
+    if str(db_session.status) != "active":
         raise HTTPException(status_code=400, detail="Interview session is already completed")
 
     # Find the current question (latest question that has not been answered yet)
@@ -601,10 +640,10 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
         }
     else:
         evaluation = await llm.evaluate_answer(
-            question=current_q.question_text,
+            question=str(current_q.question_text),
             answer=payload.answer,
-            role=db_session.role,
-            level=db_session.level
+            role=str(db_session.role),
+            level=str(db_session.level)
         )
     
     # 2. Update the current question in DB with feedback
@@ -639,12 +678,13 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
                 })
         
         # Generate the next question text
+        company_name = getattr(db_session, "company_name")
         next_question_text = await llm.generate_next_question(
-            role=db_session.role,
-            level=db_session.level,
-            tech_stack=db_session.tech_stack,
+            role=str(db_session.role),
+            level=str(db_session.level),
+            tech_stack=db_session.tech_stack,  # type: ignore
             transcript=answered_turns,
-            company_name=db_session.company_name
+            company_name=str(company_name) if company_name else None
         )
         
         # Save next question to DB
@@ -657,9 +697,9 @@ async def submit_response(session_id: str, payload: schemas.AnswerSubmitRequest,
         next_q_response = schemas.InterviewQuestionResponse.model_validate(db_next_q)
     
     return schemas.AnswerSubmitResponse(
-        critique=evaluation.get("critique"),
+        critique=evaluation.get("critique") or "",
         score=evaluation.get("score", 0),
-        model_answer=evaluation.get("model_answer"),
+        model_answer=evaluation.get("model_answer") or "",
         next_question=next_q_response,
         is_finished=is_finished
     )
@@ -676,7 +716,7 @@ async def end_interview(
     if not db_session:
         raise HTTPException(status_code=404, detail="Interview session not found")
         
-    if db_session.status == "completed":
+    if str(db_session.status) == "completed":
         return db_session
 
     logger.info(f"Finalizing and evaluating session: {session_id} (Cheating: {cheating_detected})")
@@ -687,8 +727,8 @@ async def end_interview(
         # Include questions even if the last one was not answered (we skip it)
         if q.user_answer is not None:
             transcript.append({
-                "question": q.question_text,
-                "answer": q.user_answer
+                "question": str(q.question_text),
+                "answer": str(q.user_answer)
             })
 
     if not transcript:
@@ -709,13 +749,15 @@ async def end_interview(
             problem_solving_score=0,
             structure_score=0
         )
+        if not db_session:
+            raise HTTPException(status_code=404, detail="Interview session not found")
         return db_session
 
     # 1. Generate final session report cards via LLM
     eval_result = await llm.evaluate_session(
-        role=db_session.role,
-        level=db_session.level,
-        tech_stack=db_session.tech_stack,
+        role=str(db_session.role),
+        level=str(db_session.level),
+        tech_stack=db_session.tech_stack,  # type: ignore
         transcript=transcript
     )
 
@@ -763,10 +805,13 @@ async def end_interview(
         structure_score=structure_score
     )
 
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
     # Broadcast real-time notification
     grade = "A+" if overall_score >= 95 else "A" if overall_score >= 90 else "A-" if overall_score >= 85 else "B+" if overall_score >= 80 else "B" if overall_score >= 75 else "B-" if overall_score >= 70 else "C+" if overall_score >= 65 else "C" if overall_score >= 60 else "D"
     await notification_manager.broadcast({
-        "text": f"🎉 Interview completed! You scored {overall_score}% ({grade}) in the {db_session.role} mock interview.",
+        "text": f"🎉 Interview completed! You scored {overall_score}% ({grade}) in the {str(db_session.role)} mock interview.",
         "icon": "🎉"
     })
 
@@ -804,7 +849,7 @@ def download_pdf_report(session_id: str, db: Session = Depends(get_db)):
     if not db_session:
         raise HTTPException(status_code=404, detail="Interview session not found")
         
-    if db_session.status != "completed":
+    if str(db_session.status) != "completed":
         raise HTTPException(
             status_code=400, 
             detail="Session report is not available. Please end the interview first."
@@ -839,7 +884,7 @@ def download_pdf_report(session_id: str, db: Session = Depends(get_db)):
 
     try:
         pdf_stream = report.generate_pdf_report(session_data)
-        role_slug = db_session.role.lower().replace(" ", "_")
+        role_slug = str(db_session.role).lower().replace(" ", "_")
         filename = f"prepora_report_{role_slug}_{session_id[:8]}.pdf"
         
         return StreamingResponse(
@@ -892,15 +937,15 @@ def list_categories():
 async def resume_gap_analysis(request: Request, payload: schemas.ResumeGapAnalysisRequest):
     """Analyze resume skills against a job description to find missing skills and provide a roadmap."""
     result = await llm.analyze_resume_gap(
-        role=payload.role,
-        level=payload.level,
+        role=payload.role or "Software Engineer",
+        level=payload.level or "Mid-level",
         tech_stack=payload.tech_stack,
         job_description=payload.job_description
     )
     # Broadcast real-time notification
-    match_pct = result.match_percentage if hasattr(result, "match_percentage") else result.get("match_percentage", 0) if isinstance(result, dict) else 0
+    match_pct = result.get("match_percentage", 0)
     await notification_manager.broadcast({
-        "text": f"📄 Resume gap analysis completed for {payload.role}! Fit Score: {match_pct}%.",
+        "text": f"📄 Resume gap analysis completed for {payload.role or 'Software Engineer'}! Fit Score: {match_pct}%.",
         "icon": "📄"
     })
 
@@ -940,7 +985,7 @@ async def negotiate(request: Request, payload: schemas.NegotiateRequest):
         message=payload.message
     )
     # Broadcast real-time notification
-    offer_str = result.current_offer if hasattr(result, "current_offer") else result.get("current_offer", "") if isinstance(result, dict) else ""
+    offer_str = result.get("current_offer", "")
     await notification_manager.broadcast({
         "text": f"💬 Recruiter Sarah adjusted offer package to {offer_str}",
         "icon": "💬"

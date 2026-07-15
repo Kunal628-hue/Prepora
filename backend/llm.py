@@ -72,7 +72,7 @@ async def generate_llm_response(prompt: str, response_json: bool = False) -> str
         headers = {"Content-Type": "application/json"}
         
         contents = [{"parts": [{"text": prompt}]}]
-        data = {"contents": contents}
+        data: Dict[str, Any] = {"contents": contents}
         if response_json:
             data["generationConfig"] = {"responseMimeType": "application/json"}
 
@@ -137,7 +137,7 @@ def fetch_company_info(company_name: str) -> Optional[Dict[str, Any]]:
         tips_list = [f"- {t.title}: {t.content}" for t in tips]
         return {
             "tips": "\n".join(tips_list),
-            "topics": ", ".join(set(p.topic for p in problems)) if problems else "general technical problems"
+            "topics": ", ".join(set(str(p.topic) for p in problems)) if problems else "general technical problems"
         }
     except Exception as e:
         logger.error(f"Error fetching company info from DB: {e}")
@@ -548,4 +548,85 @@ async def get_negotiate_reply(history: List[Dict[str, str]], message: str) -> Di
         "leverage_rating": "Reasonable request",
         "status": "active"
     }
+
+async def generate_ai_company_track(company_name: str) -> Dict[str, Any]:
+    """Generate interview preparation track details for a custom company using AI or high quality fallback."""
+    import random
+    name_clean = company_name.strip()
+    prompt = (
+        f"Generate interview preparation track details for a software engineering candidate interviewing at the company '{name_clean}'.\n"
+        f"Output the response strictly as a JSON object matching this structure:\n"
+        f"{{\n"
+        f"  \"description\": \"A short, professional 1-2 sentence description of the technical focus at {name_clean}.\",\n"
+        f"  \"difficulty\": \"EASY\" or \"MEDIUM\" or \"HARD\",\n"
+        f"  \"tags\": [\"SWE\", \"SYSTEMS\", \"FRONTEND\", \"BACKEND\", \"MOBILE\", \"ML\"] (choose 2-3 relevant tags),\n"
+        f"  \"problems_count\": a random integer between 50 and 150,\n"
+        f"  \"mock_questions_count\": a random integer between 10 and 25,\n"
+        f"  \"problems\": [\n"
+        f"    {{\n"
+        f"      \"name\": \"A famous LeetCode problem commonly asked at {name_clean}\",\n"
+        f"      \"difficulty\": \"EASY\" or \"MEDIUM\" or \"HARD\",\n"
+        f"      \"topic\": \"The general topic area, e.g., ARRAY, LINKED LIST, TREE, GRAPH, DYNAMIC PROGRAMMING\"\n"
+        f"    }},\n"
+        f"    ... (include exactly 3-4 famous problems)\n"
+        f"  ],\n"
+        f"  \"tips\": [\n"
+        f"    {{\n"
+        f"      \"title\": \"A short title for an interview tip specific to {name_clean}\",\n"
+        f"      \"content\": \"Description of what they look for in candidate answers.\",\n"
+        f"      \"order\": 1\n"
+        f"    }},\n"
+        f"    ... (include exactly 2 tips)\n"
+        f"  ],\n"
+        f"  \"user_tips\": [\n"
+        f"    {{\n"
+        f"      \"content\": \"A simulated user feedback tip describing their recent interview experience at {name_clean}.\",\n"
+        f"      \"author\": \"@handle\",\n"
+        f"      \"time_ago\": \"e.g., 2 days ago\",\n"
+        f"      \"likes\": 5\n"
+        f"    }},\n"
+        f"    ... (include exactly 2 user feedback tips)\n"
+        f"  ]\n"
+        f"}}\n"
+        f"Ensure output is valid, parseable JSON only. Do not output any markdown formatting (like ```json), just the plain JSON string."
+    )
+
+    try:
+        response = await generate_llm_response(prompt, response_json=True)
+        if response:
+            # Strip markdown code blocks if any got returned
+            if response.startswith("```"):
+                lines = response.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                response = "\n".join(lines).strip()
+            return json.loads(response)
+    except Exception as e:
+        logger.error(f"Error calling LLM for company track generation: {e}")
+
+    # Fallback to smart high quality template
+    difficulty = random.choice(["EASY", "MEDIUM", "HARD"])
+    return {
+        "description": f"Focuses on scalable consumer platforms, high throughput API services, and infrastructure systems at {name_clean}.",
+        "difficulty": difficulty,
+        "tags": ["SWE", "BACKEND", "SYSTEMS"],
+        "problems_count": 88,
+        "mock_questions_count": 12,
+        "problems": [
+            {"name": "Two Sum", "difficulty": "EASY", "topic": "ARRAY"},
+            {"name": "Number of Islands", "difficulty": "MEDIUM", "topic": "GRAPH"},
+            {"name": "LRU Cache", "difficulty": "MEDIUM", "topic": "LINKED LIST"}
+        ],
+        "tips": [
+            {"title": f"Master {name_clean} Architecture", "content": "Expect system design questions focused on scalability, data storage, and rate limiting.", "order": 1},
+            {"title": "Core Values", "content": "Explain how you handle failure and iterate quickly based on user telemetry.", "order": 2}
+        ],
+        "user_tips": [
+            {"content": f"Interviewed for SWE. First round was a coding assessment, second was system design for {name_clean}'s scale.", "author": "@code_ninja", "time_ago": "3 days ago", "likes": 12},
+            {"content": "Understand database indexing and query optimizations. They asked about database locking.", "author": "@sql_pro", "time_ago": "1 week ago", "likes": 4}
+        ]
+    }
+
 
